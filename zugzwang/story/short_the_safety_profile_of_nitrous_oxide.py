@@ -1,3 +1,4 @@
+import inspect
 import os
 import textwrap
 from typing import List
@@ -19,7 +20,7 @@ scenes = []
 
 def get_narration(text: str):
     text = text.rstrip().lstrip()
-    text = textwrap.dedent(text)
+    text = inspect.cleandoc(text)
     return Narration(text, voice_id=voice_id)
 
 
@@ -36,7 +37,7 @@ def generate_images(scenes: List[Scene], output_dir: str):
         Generate a simple image that will help illustrate the following text:
     """
     prompt = prompt.rstrip().lstrip()
-    prompt = textwrap.dedent(prompt)
+    prompt = inspect.cleandoc(prompt)
 
     os.makedirs(output_dir, exist_ok=True)
     for i, scene in enumerate(scenes):

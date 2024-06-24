@@ -1,6 +1,5 @@
 import inspect
 import os
-import textwrap
 
 import chess
 import chess.svg
@@ -25,6 +24,7 @@ board = chess.Board(puzzle.fen)
 
 
 def get_narration(text: str):
+    text = text.rstrip().lstrip()
     text = inspect.cleandoc(text)
     return Narration(text, voice_id=voice_id)
 

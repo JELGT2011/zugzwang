@@ -80,7 +80,7 @@ class Scene:
                         # .fx(vfx.resize, newsize=(height, width))
                         .fx(vfx.crop, width=width, height=height)
                         .fx(vfx.margin, mar=32, opacity=0))
-        title_clip = moviepy.editor.TextClip(self.name, fontsize=54, color="white", bg_color="black", method="caption", size=(width, None))
+        title_clip = moviepy.editor.TextClip(self.name, fontsize=54, color="white", bg_color="rgba(255, 0, 0, 0.5)", method="caption", size=(width, None))
         # caption_clip = moviepy.editor.TextClip(self.narration.text, fontsize=36, color="white", method="caption", size=(width, None))
         
         scene_clip = moviepy.editor.CompositeVideoClip(
@@ -89,7 +89,7 @@ class Scene:
                 title_clip.set_position("top", "center"),
                 # caption_clip.set_position("center", "center"),
             ],
-            size=(height, width),
+            size=(width, height),
         )
         scene_clip = scene_clip.set_audio(audio_clip)
         scene_clip = scene_clip.set_duration(audio_clip.duration)
