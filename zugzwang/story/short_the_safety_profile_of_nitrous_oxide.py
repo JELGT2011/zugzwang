@@ -4,8 +4,8 @@ from typing import List
 
 import requests
 
-from zugswang.models import Narration, Scene
-from zugswang.openai import generate_image
+from zugzwang.models import Narration, Scene
+from zugzwang.openai import generate_image
 
 
 data_dir = os.path.join("data")
@@ -160,7 +160,7 @@ add_scene(
 
 
 if __name__ == '__main__':
-    from main import generate_video
+    from zugzwang.utils import generate_video
     import moviepy
     import moviepy.editor
 

@@ -2,8 +2,8 @@ import os
 import chess
 import chess.svg
 
-from zugswang.models import Narration, Puzzle, ChessScene
-from zugswang.utils import show_attacks
+from zugzwang.models import Narration, Puzzle, ChessScene
+from zugzwang.utils import show_attacks
 
 puzzle = Puzzle(
     puzzleid='mnofO',
@@ -123,6 +123,6 @@ scenes.append(scene)
 
 
 if __name__ == '__main__':
-    from main import generate_video
+    from zugzwang.utils import generate_video
     output_dir = os.path.join("data", "puzzles", __file__.split("/")[-1].replace(".py", ""))
     generate_video(scenes, output_dir)

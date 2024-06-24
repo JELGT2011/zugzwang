@@ -13,7 +13,7 @@ import moviepy.video.fx.all as vfx
 from PIL import Image
 import numpy as np
 
-from zugswang.elevenlabs import generate_audio_from_text
+from zugzwang.elevenlabs import generate_audio_from_text
 
 narrations_dir = os.path.join("data", "narrations")
 
@@ -70,7 +70,7 @@ class Scene:
     narration: Narration
     media_filepath: str
 
-    def generate_clip(self, id, output_dir, height: int, width: int, pause_duration: float=0.25):
+    def generate_clip(self, id: str, output_dir: str, height: int, width: int, pause_duration: float=0.25):
         narration_clip = moviepy.editor.AudioFileClip(self.narration.audio_path)
         pause_clip = moviepy.editor.AudioClip(lambda t: 0, duration=pause_duration)
         audio_clip = moviepy.editor.concatenate_audioclips([narration_clip, pause_clip])
@@ -129,25 +129,25 @@ class ChessScene:
         )
         return svg
     
-    def generate_clip(self, id, canvas, output_dir, width, pause_duration):
+    def generate_clip(self, id: str, output_dir: str, height: int, width: int, pause_duration: float=0.25):
         svg_path = os.path.join(output_dir, f"{id}.png")
-        svg = self.generate_svg(size=width)
+        svg = self.generate_svg(size=height)
         cairosvg.svg2png(bytestring=svg, write_to=svg_path)
 
         narration_clip = moviepy.editor.AudioFileClip(self.narration.audio_path)
         pause_clip = moviepy.editor.AudioClip(lambda t: 0, duration=pause_duration)
         audio_clip = moviepy.editor.concatenate_audioclips([narration_clip, pause_clip])
+
         board_clip = moviepy.editor.ImageClip(svg_path)
-        title_clip = moviepy.editor.TextClip(self.name, fontsize=54, color="white", method="caption", size=(width, None))
-        caption_clip = moviepy.editor.TextClip(self.narration.text, fontsize=36, color="white", method="caption", size=(width, None))
+        title_clip = moviepy.editor.TextClip(self.name, fontsize=54, color="white", bg_color="black", method="caption", size=(width, None))
+        caption_clip = moviepy.editor.TextClip(self.narration.text, fontsize=36, color="white", bg_color="black", method="caption", size=(width, None))
         scene_clip = moviepy.editor.CompositeVideoClip(
             [
-                canvas,
                 board_clip.set_position((0, 64)),
-                title_clip.set_position((0, 64 + width + 64)),
-                caption_clip.set_position((0, 64 + width + 64 + title_clip.size[1] + 64)),
+                title_clip.set_position((0, "center")),
+                caption_clip.set_position((0, 64 + height + 64 + title_clip.size[0] + 64)),
             ],
-            size=canvas.size
+            size=(height, width),
         )
         scene_clip = scene_clip.set_audio(audio_clip)
         scene_clip = scene_clip.set_duration(audio_clip.duration)

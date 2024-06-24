@@ -39,7 +39,7 @@ def generate_audio_from_text(text: str, output_path: str, voice_id: str):
     }
     response = requests.request("POST", url, json=payload, headers=headers)
     if response.status_code != 200:
-        raise Exception(f"Request failed with status code {response.status_code}")
+        raise Exception(f"Request failed: status_code = {response.status_code}, content = {response.content}")
 
     with open(output_path, 'wb') as f:
         for chunk in response.iter_content(chunk_size=CHUNK_SIZE):

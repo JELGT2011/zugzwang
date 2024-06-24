@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 import requests
 
-from zugswang.models import Puzzle
+from zugzwang.models import Puzzle
 
 
 load_dotenv()

@@ -5,4 +5,4 @@ cairosvg==2.7.1
 ipython==8.25.0
 moviepy==1.0.3
 openai==1.35.3
-pip install -e .
+-e .

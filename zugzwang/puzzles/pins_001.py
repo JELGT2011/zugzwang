@@ -2,7 +2,7 @@ import os
 import chess
 import chess.svg
 
-from zugswang.models import Narration, ChessScene
+from zugzwang.models import Narration, ChessScene
 
 
 opening_scene = ChessScene(
@@ -80,6 +80,6 @@ scenes = [
 
 
 if __name__ == '__main__':
-    from main import generate_video
+    from zugzwang.utils import generate_video
     output_dir = os.path.join("data", "puzzles", "pins_001")
     generate_video(scenes, output_dir)
