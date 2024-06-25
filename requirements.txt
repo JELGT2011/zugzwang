@@ -1,8 +1,18 @@
+# general
 python-dotenv==1.0.1
 requests==2.32.3
+simple-youtube-api==0.2.8
+
+# chess
 python-chess==1.999
 cairosvg==2.7.1
-ipython==8.25.0
+
+# tools
 moviepy==1.0.3
 openai==1.35.3
+
+# dev
+ipython==8.25.0
+
+# self
 -e .

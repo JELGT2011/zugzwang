@@ -52,12 +52,13 @@ class Narration:
     text: str
     voice_id: str
     audio_path: str
+    audio_hash: str
 
     def __init__(self, text: str, voice_id: str="EODKX28NbkUPd7QWJ7yr"):
         self.text = text
         self.voice_id = voice_id
-        audio_hash = hashlib.sha256(text.encode()).hexdigest()
-        self.audio_path = os.path.join(narrations_dir, voice_id, f"{audio_hash}.mp3")
+        self.audio_hash = hashlib.sha256(text.encode()).hexdigest()
+        self.audio_path = os.path.join(narrations_dir, voice_id, f"{self.audio_hash}.mp3")
         os.makedirs(os.path.dirname(self.audio_path), exist_ok=True)
 
         if not os.path.exists(self.audio_path):
@@ -70,6 +71,10 @@ class Scene:
     narration: Narration
     media_filepath: str
 
+    @property
+    def video_filepath(self):
+        return ""
+
     def generate_clip(self, id: str, output_dir: str, height: int, width: int, pause_duration: float=0.25):
         narration_clip = moviepy.editor.AudioFileClip(self.narration.audio_path)
         pause_clip = moviepy.editor.AudioClip(lambda t: 0, duration=pause_duration)
@@ -80,7 +85,7 @@ class Scene:
                         # .fx(vfx.resize, newsize=(height, width))
                         .fx(vfx.crop, width=width, height=height)
                         .fx(vfx.margin, mar=32, opacity=0))
-        title_clip = moviepy.editor.TextClip(self.name, fontsize=54, color="white", bg_color="rgba(255, 0, 0, 0.5)", method="caption", size=(width, None))
+        title_clip = moviepy.editor.TextClip(self.name, fontsize=54, font="Bebas Neue Pro", color="white", bg_color="rgba(255, 0, 0, 0.5)", method="caption", size=(width, None))
         # caption_clip = moviepy.editor.TextClip(self.narration.text, fontsize=36, color="white", method="caption", size=(width, None))
         
         scene_clip = moviepy.editor.CompositeVideoClip(
@@ -131,7 +136,7 @@ class ChessScene:
     
     def generate_clip(self, id: str, output_dir: str, height: int, width: int, pause_duration: float=0.25):
         svg_path = os.path.join(output_dir, f"{id}.png")
-        svg = self.generate_svg(size=height)
+        svg = self.generate_svg(size=width - 64)
         cairosvg.svg2png(bytestring=svg, write_to=svg_path)
 
         narration_clip = moviepy.editor.AudioFileClip(self.narration.audio_path)
@@ -139,15 +144,15 @@ class ChessScene:
         audio_clip = moviepy.editor.concatenate_audioclips([narration_clip, pause_clip])
 
         board_clip = moviepy.editor.ImageClip(svg_path)
-        title_clip = moviepy.editor.TextClip(self.name, fontsize=54, color="white", bg_color="black", method="caption", size=(width, None))
-        caption_clip = moviepy.editor.TextClip(self.narration.text, fontsize=36, color="white", bg_color="black", method="caption", size=(width, None))
+        title_clip = moviepy.editor.TextClip(self.name, fontsize=54, font="Bebas Neue Pro", color="white", bg_color="black", method="caption", size=(width, None))
+        caption_clip = moviepy.editor.TextClip(self.narration.text, fontsize=36, font="Bebas Neue Pro", color="white", bg_color="black", method="caption", size=(width, None))
         scene_clip = moviepy.editor.CompositeVideoClip(
             [
-                board_clip.set_position((0, 64)),
-                title_clip.set_position((0, "center")),
-                caption_clip.set_position((0, 64 + height + 64 + title_clip.size[0] + 64)),
+                board_clip.set_position((64 / 2, 64)),
+                title_clip.set_position((0, 64 + width)),
+                caption_clip.set_position((0, 64 + width + 64 + title_clip.size[1] + 64)),
             ],
-            size=(height, width),
+            size=(width, height),
         )
         scene_clip = scene_clip.set_audio(audio_clip)
         scene_clip = scene_clip.set_duration(audio_clip.duration)

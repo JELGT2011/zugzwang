@@ -18,15 +18,6 @@ cp .env.template .env
 ## Puzzles
 ```python
 Puzzle(
-    puzzleid='4aKI1',
-    fen='1r3k2/3R1ppp/p6P/4PpP1/P3pP2/8/8/6K1 b - - 0 31',
-    rating=2040,
-    ratingdeviation=88,
-    moves=['f8e8', 'd7b7', 'b8b7', 'h6g7'],
-    themes=['advancedPawn', 'crushing', 'endgame', 'rookEndgame', 'sacrifice', 'short'],
-)
-
-Puzzle(
     puzzleid='Phosq',
     fen='r1b1kr2/ppq2p2/2pp3p/8/3b2n1/2NB1RB1/P1PQ2PP/5R1K b q - 1 21',
     rating=1965,
