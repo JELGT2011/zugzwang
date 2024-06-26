@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from zugzwang.models import Narration, Puzzle, ChessScene
-from zugzwang.utils import show_attacks
+from zugzwang.utils import show_attacked
 
 puzzle = Puzzle(
     puzzleid='KV0yk',

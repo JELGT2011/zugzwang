@@ -9,6 +9,7 @@ import chess.svg
 import cairosvg
 import moviepy
 import moviepy.editor
+import moviepy.audio.fx.all as afx
 import moviepy.video.fx.all as vfx
 from PIL import Image
 import numpy as np
@@ -139,7 +140,7 @@ class ChessScene:
         svg = self.generate_svg(size=width - 64)
         cairosvg.svg2png(bytestring=svg, write_to=svg_path)
 
-        narration_clip = moviepy.editor.AudioFileClip(self.narration.audio_path)
+        narration_clip = moviepy.editor.AudioFileClip(self.narration.audio_path).fx(afx.audio_normalize).fx(afx.volumex, 1)
         pause_clip = moviepy.editor.AudioClip(lambda t: 0, duration=pause_duration)
         audio_clip = moviepy.editor.concatenate_audioclips([narration_clip, pause_clip])
 

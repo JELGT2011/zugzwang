@@ -43,7 +43,7 @@ def youtube_upload(
   video.set_privacy_status(privacy_status)
   video.set_public_stats_viewable(True)
 
-  video.set_publish_at(find_next_best_upload_time())
+  # video.set_publish_at(find_next_best_upload_time())
 
   # video.set_thumbnail_path('test_thumb.png')
 
@@ -54,9 +54,9 @@ def youtube_upload(
 
 
 if __name__ == "__main__":
-  video_filepath = "./data/puzzles/puzzle_4aKI1/final.mp4"
-  title = "What are you willing to sacrifice?"
+  video_filepath = "./data/puzzles/puzzle_Phosq/final.mp4"
+  title = "Can you find the crushing move?"
   description = "follow for daily puzzles, and leave a comment with suggestions!"
   tags = ["chess", "chesspuzzle", "puzzle"]
-  category = "education"
-  youtube_upload(video_filepath, title, description, tags, category)
+  category = "gaming"
+  youtube_upload(video_filepath, title, description, tags, category, privacy_status="public")

@@ -3,7 +3,7 @@ import chess
 import chess.svg
 
 from zugzwang.models import Narration, Puzzle, ChessScene
-from zugzwang.utils import show_attacks
+from zugzwang.utils import show_attacked
 
 puzzle = Puzzle(
     puzzleid='pYoMZ',
@@ -51,7 +51,7 @@ scene = ChessScene(
     narration=Narration("We ignore the obvious threat. If he dies, he dies. We've got bigger plans.", voice_id=voice_id),
     board=board,
     arrows=[
-        *show_attacks(board, chess.E4),
+        *show_attacked(board, chess.E4),
     ],
     orientation=puzzle.orientation,
     lastmove=lastmove,

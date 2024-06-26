@@ -3,17 +3,18 @@ import os
 
 import chess
 import chess.svg
+import moviepy.audio.fx.all as afx
 
 from zugzwang.models import Narration, Puzzle, ChessScene
-from zugzwang.utils import show_attacked
+from zugzwang.utils import show_attacked, show_attacks
 
 puzzle = Puzzle(
-    puzzleid='4aKI1',
-    fen='1r3k2/3R1ppp/p6P/4PpP1/P3pP2/8/8/6K1 b - - 0 31',
-    rating=2040,
-    ratingdeviation=88,
-    moves=['f8e8', 'd7b7', 'b8b7', 'h6g7'],
-    themes=['advancedPawn', 'crushing', 'endgame', 'rookEndgame', 'sacrifice', 'short'],
+    puzzleid='Phosq',
+    fen='r1b1kr2/ppq2p2/2pp3p/8/3b2n1/2NB1RB1/P1PQ2PP/5R1K b q - 1 21',
+    rating=1965,
+    ratingdeviation=123,
+    moves=['c8e6', 'c3b5', 'c6b5', 'd3b5'],
+    themes=['crushing', 'middlegame', 'sacrifice', 'short'],
 )
 
 voice_id = "7vsrRG6Gg5O5RWIv2i0J"
@@ -36,7 +37,7 @@ def add_scene(name: str, narration: str, **kwargs) -> ChessScene:
 add_scene(
     name="Daily Chess Puzzle",
     narration="""
-        What are you willing to sacrifice?
+        Can you find the crushing move?
     """,
     board=board,
     arrows=[],
@@ -50,7 +51,6 @@ puzzle_name = f"Puzzle: {puzzle.difficulty} ({puzzle.rating} elo)"
 piece = board.piece_at(lastmove.to_square)
 piece_name = chess.piece_name(piece.piece_type).lower()
 move_name = f"{piece_name} to {chess.SQUARE_NAMES[lastmove.to_square]}"
-
 add_scene(
     name=puzzle_name,
     narration=f"""
@@ -65,12 +65,12 @@ add_scene(
 add_scene(
     name=puzzle_name,
     narration="""
-        We have an advanced pawn 2 moves away from promoting, but black's rook covers the 8th rank.
+        Black develops, prevents any checks on the E file, and prepares to queen-side castle.
     """,
     board=board,
     arrows=[
-        *show_attacked(board, chess.G7),
-        chess.svg.Arrow(chess.B8, chess.G8, color="yellow"),
+        chess.svg.Arrow(chess.E1, chess.E8, color="yellow"),
+        chess.svg.Arrow(chess.E8, chess.C8, color="yellow"),  # TODO: show a better way to represent castle
     ],
     orientation=puzzle.orientation,
     lastmove=lastmove,
@@ -79,11 +79,11 @@ add_scene(
 add_scene(
     name=puzzle_name,
     narration="""
-        Our rook is under attack, we can move it and force black to respond.
+        Black's dark-square bishop is undefended, and their king is still in the center, let's open up the position.
     """,
     board=board,
     arrows=[
-        *show_attacked(board, chess.D7),
+        chess.svg.Arrow(chess.D2, chess.D4, color="yellow"),
     ],
     orientation=puzzle.orientation,
     lastmove=lastmove,
@@ -91,15 +91,19 @@ add_scene(
 
 lastmove = chess.Move.from_uci(puzzle.moves[1])
 board.push(lastmove)
+piece = board.piece_at(lastmove.to_square)
+piece_name = chess.piece_name(piece.piece_type).lower()
+move_name = f"{piece_name.capitalize()} to {chess.SQUARE_NAMES[lastmove.to_square]}"
 add_scene(
     name=puzzle_name,
-    narration="""
-        Rook to b7. Black cannot save the rook and prevent our pawn from promotion.
+    narration=f"""
+        {move_name}. We attack the queen and bishop, and black can no longer simply trade it for the knight.
     """,
     board=board,
     arrows=[
-        *show_attacked(board, chess.B7),
-        *show_attacked(board, chess.G7),
+        *show_attacked(board, chess.B5),
+        *show_attacks(board, chess.B5, max_arrows=2),
+        chess.svg.Arrow(chess.C3, chess.C3, color="yellow"),
     ],
     orientation=puzzle.orientation,
     lastmove=lastmove,
@@ -109,8 +113,8 @@ lastmove = chess.Move.from_uci(puzzle.moves[2])
 board.push(lastmove)
 add_scene(
     name=puzzle_name,
-    narration="""
-        Black takes the undefended rook.
+    narration=f"""
+        Black cannot move the queen and defend the bishop in one move, so the best option is to take it.
     """,
     board=board,
     arrows=[],
@@ -123,12 +127,12 @@ board.push(lastmove)
 add_scene(
     name=puzzle_name,
     narration="""
-        We take the pawn, and black cannot stop promotion. GG.
+        We take the pawn with check, finally revealing our attack to win back the piece. Black's king is exposed and the position is starting to open. GG.
     """,
     board=board,
     arrows=[
-        *show_attacked(board, chess.F8),
-        chess.svg.Arrow(chess.G7, chess.G8, color="yellow"),
+        *show_attacked(board, chess.E8),
+        *show_attacked(board, chess.D4),
     ],
     orientation=puzzle.orientation,
     lastmove=lastmove,
@@ -142,8 +146,7 @@ if __name__ == '__main__':
     height = 1920
     width = 1080
     output_dir = os.path.join("data", "puzzles", __file__.split("/")[-1].replace(".py", ""))
-    # background_video = moviepy.editor.VideoFileClip("data/backgrounds/euphoria-inspired-mood-lights.mp4", target_resolution=(height, width), audio=False)
     background_video = moviepy.editor.ColorClip(size=(width, height), color=(0, 0, 0), duration=1)
-    background_audio = moviepy.editor.AudioFileClip("data/music/dark.mp4")
+    background_audio = moviepy.editor.AudioFileClip("data/music/dark_02.mp3").fx(afx.audio_normalize).fx(afx.volumex, 0.1)
 
     generate_video(scenes, output_dir, background_video, background_audio)

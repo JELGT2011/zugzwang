@@ -3,7 +3,7 @@ import chess
 import chess.svg
 
 from zugzwang.models import Narration, Puzzle, ChessScene
-from zugzwang.utils import show_attacks
+from zugzwang.utils import show_attacked
 
 puzzle = Puzzle(
     puzzleid='mnofO',
@@ -54,7 +54,7 @@ scene = ChessScene(
     narration=generate_narration("We have a passed pawn on b3, but white controls the promotion square with the bishop."),
     board=board,
     arrows=[
-        *show_attacks(board, chess.B1),
+        *show_attacked(board, chess.B1),
         chess.svg.Arrow(chess.B3, chess.B1, color="yellow"),
     ],
     orientation=puzzle.orientation,
@@ -69,7 +69,7 @@ scene = ChessScene(
     narration=generate_narration("So we take it, and white is lost."),
     board=board,
     arrows=[
-        *show_attacks(board, chess.E4),
+        *show_attacked(board, chess.E4),
     ],
     orientation=puzzle.orientation,
     lastmove=lastmove,
@@ -84,7 +84,7 @@ scene = ChessScene(
     narration=generate_narration("White cannot stop our pawn push. If they try to move the rook back, we chase."),
     board=sideline,
     arrows=[
-        *show_attacks(sideline, chess.E1),
+        *show_attacked(sideline, chess.E1),
     ],
     orientation=puzzle.orientation,
     lastmove=sideline_move,
@@ -98,7 +98,7 @@ scene = ChessScene(
     narration=generate_narration("So the best move is to take our rook."),
     board=board,
     arrows=[
-        *show_attacks(board, chess.B4),
+        *show_attacked(board, chess.B4),
     ],
     orientation=puzzle.orientation,
     lastmove=lastmove,
@@ -112,8 +112,8 @@ scene = ChessScene(
     narration=generate_narration("We push our pawn, and the rook has no way to stop promotion. GG."),
     board=board,
     arrows=[
-        *show_attacks(board, chess.E1),
-        *show_attacks(board, chess.B4),
+        *show_attacked(board, chess.E1),
+        *show_attacked(board, chess.B4),
         chess.svg.Arrow(chess.B2, chess.B1, color="yellow"),
     ],
     orientation=puzzle.orientation,

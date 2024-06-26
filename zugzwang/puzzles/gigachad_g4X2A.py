@@ -3,7 +3,7 @@ import chess
 import chess.svg
 
 from zugzwang.models import Narration, Puzzle, ChessScene
-from zugzwang.utils import show_attacks
+from zugzwang.utils import show_attacked
 
 puzzle = Puzzle(
     puzzleid='g4X2A',
@@ -54,7 +54,7 @@ scene = ChessScene(
     narration=generate_narration("We have an outside passed pawn, but it will be difficult to protect it from white's pieces."),
     board=board,
     arrows=[
-        *show_attacks(board, chess.C4),
+        *show_attacked(board, chess.C4),
     ],
     orientation=puzzle.orientation,
     lastmove=lastmove,
@@ -104,8 +104,8 @@ scene = ChessScene(
     narration=generate_narration("We push our pawn, and the knight has no way to stop promotion. GG."),
     board=board,
     arrows=[
-        *show_attacks(board, chess.C4),
-        *show_attacks(board, chess.B5),
+        *show_attacked(board, chess.C4),
+        *show_attacked(board, chess.B5),
         chess.svg.Arrow(chess.A3, chess.A2, color="yellow"),
     ],
     orientation=puzzle.orientation,
