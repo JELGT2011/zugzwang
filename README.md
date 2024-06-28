@@ -6,6 +6,7 @@ cp .env.template .env
 ```
 - generate and update API keys in `.env`
 
+
 ## Product
 - [ ] make videos more entertaining
     - [ ] give each piece a unique voice
@@ -15,26 +16,9 @@ cp .env.template .env
     - [ ] create specialized prompt for finding a video idea (from a library)
     - [ ] create specialized prompt for intro, interjections, etc
 
+
 ## Puzzles
 ```python
-Puzzle(
-    puzzleid='paBM8',
-    fen='5qnr/Rb1k4/1p2ppQ1/2p2N1p/8/2PP4/5PPP/6K1 b - - 3 27',
-    rating=2078,
-    ratingdeviation=78,
-    moves=['d7c6', 'f5d4', 'c5d4', 'g6e4'],
-    themes=['clearance', 'crushing', 'middlegame', 'sacrifice', 'short'],
-)
-
-Puzzle(
-    puzzleid='ZPugM',
-    fen='3r3r/1kp1qp2/1p4p1/4p3/Q1N1P3/2pP2PP/P3n1PK/R4R2 b - - 2 27',
-    rating=2036,
-    ratingdeviation=76,
-    moves=['d8d3', 'c4a5', 'b6a5', 'a4b5'],
-    themes=['crushing', 'middlegame', 'sacrifice', 'short'],
-)
-
 Puzzle(
     puzzleid='cSRB1',
     fen='1r2r1k1/2q1bppp/2np1n2/2p2N2/2P1PP2/pP2BB1P/P6K/1R1Q2R1 b - - 1 23',
