@@ -6,16 +6,18 @@ import moviepy.audio.fx.all as afx
 
 from zugzwang.annotations import show_attacked, show_attacks
 from zugzwang.arrow import StyledArrow
-from zugzwang.models import Position, Puzzle, PuzzleVideo
+from zugzwang.models.position import Position
+from zugzwang.models.puzzle import Puzzle
+from zugzwang.models.video_template import PuzzleVideo
 
 
 puzzle = Puzzle(
-    puzzleid='ZPugM',
-    fen='3r3r/1kp1qp2/1p4p1/4p3/Q1N1P3/2pP2PP/P3n1PK/R4R2 b - - 2 27',
-    rating=2036,
-    ratingdeviation=76,
-    moves=['d8d3', 'c4a5', 'b6a5', 'a4b5'],
-    themes=['crushing', 'middlegame', 'sacrifice', 'short'],
+    puzzleid='cSRB1',
+    fen='1r2r1k1/2q1bppp/2np1n2/2p2N2/2P1PP2/pP2BB1P/P6K/1R1Q2R1 b - - 1 23',
+    rating=1946,
+    ratingdeviation=111,
+    moves=['e7f8', 'g1g7', 'f8g7', 'd1g1'],
+    themes=['clearance', 'crushing', 'middlegame', 'sacrifice', 'short'],
 )
 
 board = chess.Board(puzzle.fen)
@@ -24,22 +26,18 @@ height = 1920
 width = 1080
 
 title = "Daily Chess Puzzle"
-description = "follow for daily puzzles, and leave a comment with suggestions!"
-tags = ["chess", "chesspuzzle", "puzzle"]
-category = "gaming"
 
-voice_id = "7vsrRG6Gg5O5RWIv2i0J"
 output_dir = os.path.join("data", "puzzles", __file__.split("/")[-1].replace(".py", ""))
 background_video = moviepy.editor.ColorClip(size=(width, height), color=(0, 0, 0), duration=1)
 background_audio = moviepy.editor.AudioFileClip("data/music/dark_02.mp3").fx(afx.audio_normalize).fx(afx.volumex, 0.1)
 video = PuzzleVideo(
     output_dir=output_dir,
     title=title,
-    description=description,
-    tags=tags,
-    category=category,
+    description="follow for daily puzzles, and leave a comment with suggestions!",
+    tags=["chess", "chesspuzzle", "puzzle"],
+    category="gaming",
     puzzle=puzzle,
-    voice_id=voice_id,
+    voice_id="7vsrRG6Gg5O5RWIv2i0J",
     background_video=background_video,
     background_music=background_audio,
 )
@@ -76,22 +74,23 @@ video.add_scene(
 video.add_scene(
     name=puzzle_name,
     narration="""
-        Black is attacking our g3 pawn.
+        Black reveals an attack on our pawn, and defends their own.
     """,
     board=board,
     arrows=[
-        *show_attacked(board, chess.G3),
+        *show_attacked(board, chess.E4),
+        *show_attacked(board, chess.G7),
     ],
 )
 
 video.add_scene(
     name=puzzle_name,
     narration="""
-        But the rook is now undefended, how can we exploit this?
+        But did they really defend it?
     """,
     board=board,
     arrows=[
-        StyledArrow(chess.D3, chess.D3, color="yellow"),
+        StyledArrow(chess.G1, chess.G8, color="yellow"),
     ],
 )
 
@@ -105,11 +104,12 @@ with Position(board, chess.Move.from_uci(puzzle.moves.pop(0))) as board:
     video.add_scene(
         name=puzzle_name,
         narration=f"""
-            Let's go with the most forcing option, checking the enemy king, and it has no good squares to go to.
+            We take with check, sacrificing the rook.
         """,
         board=board,
         arrows=[
-            *show_attacks(board, chess.A5),
+            *show_attacks(board, chess.G7),
+            *show_attacked(board, chess.G7),
         ],
     )
 
@@ -210,4 +210,4 @@ video.add_scene(
 
 
 if __name__ == '__main__':
-    video.generate(upload=True)
+    video.generate(upload=False)
