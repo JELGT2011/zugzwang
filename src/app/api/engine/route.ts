@@ -16,10 +16,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "FEN is required" }, { status: 400 });
     }
 
-    const pathToEngine = path.join(process.cwd(), "node_modules/stockfish/src/stockfish.js");
+    // Use a more dynamic way to construct the path to bypass Turbopack's static analysis
+    const enginePathParts = ["node_modules", "stockfish", "src", "stockfish.js"];
+    const pathToEngine = path.join(process.cwd(), ...enginePathParts);
     
-    return new Promise((resolve) => {
-      const engine = spawn("node", [pathToEngine]);
+    return new Promise<NextResponse>((resolve) => {
+      const nodeExe = "node";
+      const engine = spawn(nodeExe, [pathToEngine]);
       const result: Partial<StockfishAnalysis> = {};
       let isResolved = false;
 

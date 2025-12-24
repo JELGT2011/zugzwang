@@ -1,5 +1,5 @@
 import { openai } from "@ai-sdk/openai";
-import { streamText, Message } from "ai";
+import { streamText } from "ai";
 
 export const runtime = "edge";
 
@@ -34,10 +34,10 @@ IMPORTANT: Do NOT reveal the exact best move unless explicitly asked for detaile
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { messages } = body as { messages: Message[] };
+    const { messages } = body as { messages: any[] };
 
     // Process messages to extract analysis context
-    const processedMessages = messages.map((msg: Message) => {
+    const processedMessages = messages.map((msg: any) => {
       if (msg.role === "user") {
         try {
           const parsed = JSON.parse(msg.content as string);
@@ -70,10 +70,10 @@ export async function POST(request: Request) {
       system: SYSTEM_PROMPT,
       messages: processedMessages,
       temperature: 0.7,
-      maxTokens: 300,
+      maxOutputTokens: 300,
     });
 
-    return result.toDataStreamResponse();
+    return result.toTextStreamResponse();
   } catch (error) {
     console.error("Coach API error:", error);
     return new Response(
