@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { UIMessage as Message } from "@ai-sdk/react";
 
 interface CoachingPanelProps {
-  messages: Message[];
+  messages: any[];
   isThinking: boolean;
   playerColor: "white" | "black";
 }

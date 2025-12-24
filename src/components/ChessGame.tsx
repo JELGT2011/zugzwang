@@ -18,6 +18,8 @@ interface Evaluation {
   depth: number;
 }
 
+export type HintLevel = "minimal" | "moderate" | "detailed";
+
 export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
