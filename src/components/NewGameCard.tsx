@@ -8,6 +8,16 @@ interface NewGameCardProps {
   isGameOver: boolean;
   gameStatus: string;
   onNewGame: (asWhite: boolean) => void;
+  aiStrength?: number;
+  onAiStrengthChange?: (strength: number) => void;
+}
+
+function getStrengthLabel(strength: number): string {
+  if (strength <= 3) return "Beginner";
+  if (strength <= 7) return "Casual";
+  if (strength <= 12) return "Intermediate";
+  if (strength <= 17) return "Advanced";
+  return "Master";
 }
 
 export default function NewGameCard({
@@ -16,6 +26,8 @@ export default function NewGameCard({
   isGameOver,
   gameStatus,
   onNewGame,
+  aiStrength = 10,
+  onAiStrengthChange,
 }: NewGameCardProps) {
   const hasStarted = moveHistory.length > 0;
 
@@ -40,32 +52,72 @@ export default function NewGameCard({
       <div className="p-4">
         {!hasStarted ? (
           /* Color selection when game hasn't started */
-          <div className="space-y-3">
-            <p className="text-sm text-text-muted">Choose your color</p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => onNewGame(true)}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${
-                  playerColor === "white"
-                    ? "bg-white/20 ring-2 ring-white/40"
-                    : "bg-white/5 hover:bg-white/10"
-                }`}
-              >
-                <span className="text-2xl">♔</span>
-                <span className="font-medium">White</span>
-              </button>
-              <button
-                onClick={() => onNewGame(false)}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all border border-border ${
-                  playerColor === "black"
-                    ? "bg-black/40 ring-2 ring-white/40"
-                    : "bg-black/20 hover:bg-black/30"
-                }`}
-              >
-                <span className="text-2xl">♚</span>
-                <span className="font-medium">Black</span>
-              </button>
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <p className="text-sm text-text-muted">Choose your color</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onNewGame(true)}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${
+                    playerColor === "white"
+                      ? "bg-white/20 ring-2 ring-white/40"
+                      : "bg-white/5 hover:bg-white/10"
+                  }`}
+                >
+                  <span className="text-2xl">♔</span>
+                  <span className="font-medium">White</span>
+                </button>
+                <button
+                  onClick={() => onNewGame(false)}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all border border-border ${
+                    playerColor === "black"
+                      ? "bg-black/40 ring-2 ring-white/40"
+                      : "bg-black/20 hover:bg-black/30"
+                  }`}
+                >
+                  <span className="text-2xl">♚</span>
+                  <span className="font-medium">Black</span>
+                </button>
+              </div>
             </div>
+
+            {/* AI Strength Slider */}
+            {onAiStrengthChange && (
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-text-muted">AI Strength</span>
+                  <span className="font-medium text-foreground">
+                    {getStrengthLabel(aiStrength)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  value={aiStrength}
+                  onChange={(e) => onAiStrengthChange(parseInt(e.target.value))}
+                  aria-label="AI Strength"
+                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer
+                    [&::-webkit-slider-thumb]:appearance-none
+                    [&::-webkit-slider-thumb]:w-4
+                    [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:bg-white
+                    [&::-webkit-slider-thumb]:rounded-full
+                    [&::-webkit-slider-thumb]:cursor-pointer
+                    [&::-webkit-slider-thumb]:shadow-md
+                    [&::-moz-range-thumb]:w-4
+                    [&::-moz-range-thumb]:h-4
+                    [&::-moz-range-thumb]:bg-white
+                    [&::-moz-range-thumb]:rounded-full
+                    [&::-moz-range-thumb]:cursor-pointer
+                    [&::-moz-range-thumb]:border-0"
+                />
+                <div className="flex justify-between text-xs text-text-muted">
+                  <span>Easy</span>
+                  <span>Hard</span>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* Move history when game has started */
@@ -110,4 +162,3 @@ export default function NewGameCard({
     </div>
   );
 }
-
