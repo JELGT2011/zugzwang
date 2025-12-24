@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Chessboard } from "react-chessboard";
 import { Chess } from "chess.js";
 import type { PieceDropHandlerArgs } from "react-chessboard";
+import NewGameCard from "./NewGameCard";
 
 export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
@@ -11,8 +12,6 @@ export default function ChessGame() {
 
   // Handle player move
   function onDrop({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean {
-    console.log("onDrop called:", sourceSquare, "->", targetSquare);
-    
     if (!targetSquare) return false;
     
     // Check if it's player's turn
@@ -91,10 +90,10 @@ export default function ChessGame() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 w-full max-w-5xl mx-auto p-4">
+    <div className="flex flex-col lg:flex-row gap-6 w-full max-w-[1100px] mx-auto p-4">
       {/* Chess Board */}
-      <div className="flex flex-col items-center gap-4">
-        <div className="shadow-2xl rounded-lg overflow-hidden" style={{ width: 480, height: 480 }}>
+      <div className="flex flex-col items-center gap-4 flex-1 min-w-0">
+        <div className="w-full max-w-[800px] aspect-square shadow-2xl rounded-lg overflow-hidden">
           <Chessboard
             options={{
               position: game.fen(),
@@ -119,57 +118,17 @@ export default function ChessGame() {
         <div className="text-lg font-medium text-foreground">
           {getStatus()}
         </div>
-
-        {/* Move history */}
-        {game.history().length > 0 && (
-          <div className="bg-surface rounded-lg p-4 max-w-[480px] w-full">
-            <h3 className="text-sm text-text-muted mb-2">Moves</h3>
-            <div className="flex flex-wrap gap-2 text-sm font-mono">
-              {game.history().map((move, i) => (
-                <span key={i} className={i % 2 === 0 ? "text-foreground" : "text-text-muted"}>
-                  {i % 2 === 0 && <span className="text-text-muted mr-1">{Math.floor(i/2) + 1}.</span>}
-                  {move}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Controls */}
-      <div className="flex flex-col gap-4 min-w-[280px]">
-        <div className="bg-surface rounded-xl p-6 border border-border">
-          <h2 className="text-lg font-semibold mb-4">New Game</h2>
-          
-          <div className="flex gap-2">
-            <button
-              onClick={() => startNewGame(true)}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-            >
-              <span className="text-xl">♔</span>
-              <span className="font-medium">White</span>
-            </button>
-            <button
-              onClick={() => startNewGame(false)}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-black/30 hover:bg-black/40 rounded-lg transition-colors border border-border"
-            >
-              <span className="text-xl">♚</span>
-              <span className="font-medium">Black</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-surface rounded-xl p-6 border border-border">
-          <h3 className="text-sm text-text-muted mb-2">Playing as</h3>
-          <p className="text-lg font-medium capitalize">{playerColor}</p>
-        </div>
-
-        {game.isGameOver() && (
-          <div className="bg-accent-bright/20 rounded-xl p-6 border border-accent-bright/30">
-            <h3 className="text-lg font-semibold text-accent-bright">Game Over</h3>
-            <p className="text-foreground mt-1">{getStatus()}</p>
-          </div>
-        )}
+      {/* Side Panel */}
+      <div className="flex flex-col gap-4 lg:w-[280px] shrink-0">
+        <NewGameCard
+          playerColor={playerColor}
+          moveHistory={game.history({ verbose: true })}
+          isGameOver={game.isGameOver()}
+          gameStatus={getStatus()}
+          onNewGame={startNewGame}
+        />
       </div>
     </div>
   );
