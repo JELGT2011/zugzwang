@@ -191,10 +191,10 @@ const ChessboardBot: React.FC = () => {
             borderRadius: "4px",
             boxShadow: "0 2px 10px rgba(0, 0, 0, 0.5)",
           },
-          squareStyles: {
-            ...optionSquares,
-            ...rightClickedSquares,
-          },
+          // squareStyles: {
+          //   ...optionSquares,
+          //   ...rightClickedSquares,
+          // },
           darkSquareStyle: theme.darkSquareStyle,
           lightSquareStyle: theme.lightSquareStyle,
         }}
