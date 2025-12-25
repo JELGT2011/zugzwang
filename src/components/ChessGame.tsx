@@ -1,6 +1,7 @@
 "use client";
 
 import NewGameCard from "@/components/NewGameCard";
+import CoachPanel from "@/components/CoachPanel";
 import { StockfishEngine } from "@/lib/stockfish";
 import { Chess, Color } from "chess.js";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -196,6 +197,12 @@ export default function ChessGame() {
           isGameOver={game.isGameOver()}
           gameStatus={getStatus()}
           onNewGame={startNewGame}
+        />
+        
+        <CoachPanel
+          fen={game.fen()}
+          moveHistory={game.history().join(" ")}
+          lastMove={game.history().length > 0 ? game.history()[game.history().length - 1] : null}
         />
       </div>
     </div>
