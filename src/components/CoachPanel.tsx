@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Color } from "chess.js";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -9,9 +10,10 @@ interface CoachPanelProps {
     fen: string;
     moveHistory: string;
     lastMove: string | null;
+    playerColor: Color;
 }
 
-export default function CoachPanel({ fen, moveHistory, lastMove }: CoachPanelProps) {
+export default function CoachPanel({ fen, moveHistory, lastMove, playerColor }: CoachPanelProps) {
     const [analysis, setAnalysis] = useState<string>("");
     const [isLoading, setIsLoading] = useState(false);
     const lastProcessedMove = useRef<string | null>(null);
@@ -37,6 +39,7 @@ export default function CoachPanel({ fen, moveHistory, lastMove }: CoachPanelPro
                     messages: [{ role: "user", content: `Explain the last move: ${move}` }],
                     fen,
                     history: moveHistory,
+                    playerColor,
                 }),
                 signal: abortController.signal,
             });
@@ -64,7 +67,7 @@ export default function CoachPanel({ fen, moveHistory, lastMove }: CoachPanelPro
                 setIsLoading(false);
             }
         }
-    }, [fen, moveHistory]);
+    }, [fen, moveHistory, playerColor]);
 
     useEffect(() => {
         if (lastMove && lastMove !== lastProcessedMove.current) {

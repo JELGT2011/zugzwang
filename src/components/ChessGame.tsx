@@ -214,6 +214,7 @@ export default function ChessGame() {
           fen={game.fen()}
           moveHistory={game.history().join(" ")}
           lastMove={game.history().length > 0 ? game.history()[game.history().length - 1] : null}
+          playerColor={playerColor}
         />
       </div>
     </div>

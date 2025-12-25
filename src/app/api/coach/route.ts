@@ -4,16 +4,20 @@ import { streamText } from 'ai';
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
-  const { messages, fen, history } = await req.json();
+  const { messages, fen, history, playerColor } = await req.json();
+
+  const playerRole = playerColor === 'w' ? 'White' : 'Black';
+  const engineRole = playerColor === 'w' ? 'Black' : 'White';
 
   const systemPrompt = `You are a Grandmaster Chess Coach. 
 Your goal is to explain the current state of the game and the last move played in a clear, engaging, and educational way.
+The human player is playing as ${playerRole} and the engine (Stockfish) is playing as ${engineRole}.
 The current position in FEN is: ${fen}
 The move history (SAN) is: ${history}
 
 Provide a brief analysis (2-3 sentences) of the current position. 
 Explain the pros and cons of the last move. 
-Suggest what the player should focus on next.
+Suggest what the player (who is ${playerRole}) should focus on next.
 Keep it encouraging and insightful.
 Respond in plain text.`;
 
