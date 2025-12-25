@@ -1,13 +1,13 @@
 "use client";
 
-import NewGameCard from "@/components/NewGameCard";
 import CoachPanel from "@/components/CoachPanel";
+import NewGameCard from "@/components/NewGameCard";
+import { Badge } from "@/components/ui/badge";
 import { StockfishEngine } from "@/lib/stockfish";
 import { Chess, Color } from "chess.js";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chessboard } from "react-chessboard";
-import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
 
 export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
@@ -209,7 +209,7 @@ export default function ChessGame() {
           gameStatus={getStatus()}
           onNewGame={startNewGame}
         />
-        
+
         <CoachPanel
           fen={game.fen()}
           moveHistory={game.history().join(" ")}
