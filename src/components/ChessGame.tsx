@@ -1,16 +1,24 @@
 "use client";
 
+import NewGameCard from "@/components/NewGameCard";
 import { Chess } from "chess.js";
 import { useState } from "react";
 import { Chessboard } from "react-chessboard";
-import NewGameCard from "@/components/NewGameCard";
 
 export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
 
   // Handle player move
-  function onDrop(sourceSquare: string, targetSquare: string): boolean {
+  function onDrop({
+    sourceSquare,
+    targetSquare,
+  }: {
+    sourceSquare: string;
+    targetSquare: string | null;
+  }): boolean {
+    if (!targetSquare) return false;
+
     // Try to make the move
     const gameCopy = new Chess(game.fen());
 
@@ -59,15 +67,15 @@ export default function ChessGame() {
             <Chessboard
               options={{
                 position: game.fen(),
+                onPieceDrop: onDrop,
+                boardOrientation: playerColor,
+                animationDurationInMs: 200,
+                darkSquareStyle: { backgroundColor: "#7c6f64" },
+                lightSquareStyle: { backgroundColor: "#d5c4a1" },
+                boardStyle: {
+                  borderRadius: "8px",
+                },
               }}
-              // onPieceDrop={onDrop}
-              // boardOrientation={playerColor}
-              // animationDuration={200}
-              // customDarkSquareStyle={{ backgroundColor: "#7c6f64" }}
-              // customLightSquareStyle={{ backgroundColor: "#d5c4a1" }}
-              // customBoardStyle={{
-              //   borderRadius: "8px",
-              // }}
             />
           </div>
         </div>
