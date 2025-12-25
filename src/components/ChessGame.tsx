@@ -2,12 +2,77 @@
 
 import NewGameCard from "@/components/NewGameCard";
 import { Chess } from "chess.js";
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Chessboard } from "react-chessboard";
+import { StockfishEngine } from "@/lib/stockfish";
 
 export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
+  const [isEngineThinking, setIsEngineThinking] = useState(false);
+  const engineThinkingRef = useRef(false);
+  const engine = useRef<StockfishEngine | null>(null);
+
+  // Synchronize ref with state for the engine thinking status
+  useEffect(() => {
+    engineThinkingRef.current = isEngineThinking;
+  }, [isEngineThinking]);
+
+  // Initialize engine
+  useEffect(() => {
+    console.debug("Initializing Stockfish engine...");
+    engine.current = new StockfishEngine();
+    engine.current.send("uci");
+    engine.current.send("isready");
+
+    return () => {
+      console.debug("Terminating Stockfish engine...");
+      engine.current?.quit();
+    };
+  }, []);
+
+  // Engine move logic
+  const makeEngineMove = useCallback(() => {
+    if (game.isGameOver() || !engine.current) return;
+
+    const turn = game.turn(); // 'w' or 'b'
+    const engineTurn = playerColor === "white" ? "b" : "w";
+
+    if (turn === engineTurn && !engineThinkingRef.current) {
+      console.debug("Engine turn detected. Thinking...");
+      engineThinkingRef.current = true;
+      
+      // Defer state update to avoid linter warning and cascading renders
+      setTimeout(() => setIsEngineThinking(true), 0);
+
+      // Small delay for natural feel
+      setTimeout(() => {
+        if (!engine.current) return;
+        engine.current.send(`position fen ${game.fen()}`);
+        engine.current.send("go depth 12", (message) => {
+          const bestMoveMatch = message.match(/^bestmove\s([a-h][1-8][a-h][1-8][qrbn]?)/);
+          if (bestMoveMatch) {
+            const bestMove = bestMoveMatch[1];
+            console.debug("Engine suggests move:", bestMove);
+            const gameCopy = new Chess(game.fen());
+            try {
+              gameCopy.move(bestMove);
+              setGame(gameCopy);
+            } catch (e) {
+              console.error("Engine move error:", e);
+            }
+          }
+          engineThinkingRef.current = false;
+          setIsEngineThinking(false);
+        });
+      }, 500);
+    }
+  }, [game, playerColor]);
+
+  // Trigger engine move when game or turn changes
+  useEffect(() => {
+    makeEngineMove();
+  }, [game, makeEngineMove]);
 
   // Handle player move
   function onDrop({
@@ -17,7 +82,33 @@ export default function ChessGame() {
     sourceSquare: string;
     targetSquare: string | null;
   }): boolean {
-    if (!targetSquare) return false;
+    console.debug("onDrop called:", { sourceSquare, targetSquare });
+    
+    if (game.isGameOver()) {
+      console.debug("Move rejected: Game is over");
+      return false;
+    }
+    
+    if (engineThinkingRef.current) {
+      console.debug("Move rejected: Engine is thinking");
+      return false;
+    }
+    
+    if (!targetSquare) {
+      console.debug("Move rejected: No target square");
+      return false;
+    }
+
+    // Ensure it's the player's turn
+    const turn = game.turn();
+    const playerTurn = playerColor === "white" ? "w" : "b";
+    
+    console.debug("Turn check:", { turn, playerTurn });
+    
+    if (turn !== playerTurn) {
+      console.debug("Move rejected: Not player's turn");
+      return false;
+    }
 
     // Try to make the move
     const gameCopy = new Chess(game.fen());
@@ -29,13 +120,17 @@ export default function ChessGame() {
         promotion: "q", // always promote to queen for simplicity
       });
 
-      if (result === null) return false;
+      if (result === null) {
+        console.debug("Move rejected: Invalid move according to chess.js");
+        return false;
+      }
 
+      console.debug("Move accepted:", result.san);
       // Update state with the new position
       setGame(gameCopy);
       return true;
-    } catch (e) {
-      console.error("Move error:", e);
+    } catch (err) {
+      console.error("Move error:", err);
       return false;
     }
   }
@@ -45,6 +140,13 @@ export default function ChessGame() {
     const newGame = new Chess();
     setGame(newGame);
     setPlayerColor(asWhite ? "white" : "black");
+    setIsEngineThinking(false);
+    
+    // Reset engine
+    if (engine.current) {
+      engine.current.send("ucinewgame");
+      engine.current.send("isready");
+    }
   }
 
   // Get game status
@@ -82,7 +184,7 @@ export default function ChessGame() {
 
         {/* Status */}
         <div className="text-lg font-medium text-foreground">
-          {getStatus()}
+          {isEngineThinking ? "Stockfish is thinking..." : getStatus()}
         </div>
       </div>
 
