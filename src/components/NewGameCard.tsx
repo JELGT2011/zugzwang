@@ -1,9 +1,9 @@
 "use client";
 
-import { Move } from "chess.js";
+import { Move, Color } from "chess.js";
 
 interface NewGameCardProps {
-  playerColor: "white" | "black";
+  playerColor: Color;
   moveHistory: Move[];
   isGameOver: boolean;
   gameStatus: string;
@@ -28,7 +28,7 @@ export default function NewGameCard({
         </h2>
         {hasStarted && (
           <button
-            onClick={() => onNewGame(playerColor === "white")}
+            onClick={() => onNewGame(playerColor === "w")}
             className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors"
             title="Reset game"
           >
@@ -46,9 +46,9 @@ export default function NewGameCard({
               <div className="flex gap-2">
                 <button
                   onClick={() => onNewGame(true)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${playerColor === "white"
-                      ? "bg-white/20 ring-2 ring-white/40"
-                      : "bg-white/5 hover:bg-white/10"
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${playerColor === "w"
+                    ? "bg-white/20 ring-2 ring-white/40"
+                    : "bg-white/5 hover:bg-white/10"
                     }`}
                 >
                   <span className="text-2xl">♔</span>
@@ -56,9 +56,9 @@ export default function NewGameCard({
                 </button>
                 <button
                   onClick={() => onNewGame(false)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all border border-border ${playerColor === "black"
-                      ? "bg-black/40 ring-2 ring-white/40"
-                      : "bg-black/20 hover:bg-black/30"
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all border border-border ${playerColor === "b"
+                    ? "bg-black/40 ring-2 ring-white/40"
+                    : "bg-black/20 hover:bg-black/30"
                     }`}
                 >
                   <span className="text-2xl">♚</span>
@@ -74,7 +74,7 @@ export default function NewGameCard({
             <div className="flex items-center justify-between text-sm">
               <span className="text-text-muted">Playing as</span>
               <span className="font-medium capitalize flex items-center gap-1">
-                {playerColor === "white" ? "♔" : "♚"} {playerColor}
+                {playerColor === "w" ? "♔" : "♚"} {playerColor}
               </span>
             </div>
 

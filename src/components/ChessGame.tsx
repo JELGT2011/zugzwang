@@ -1,14 +1,14 @@
 "use client";
 
 import NewGameCard from "@/components/NewGameCard";
-import { Chess } from "chess.js";
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Chessboard } from "react-chessboard";
 import { StockfishEngine } from "@/lib/stockfish";
+import { Chess, Color } from "chess.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Chessboard } from "react-chessboard";
 
 export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
-  const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
+  const [playerColor, setPlayerColor] = useState<Color>("w");
   const [isEngineThinking, setIsEngineThinking] = useState(false);
   const engineThinkingRef = useRef(false);
   const engine = useRef<StockfishEngine | null>(null);
@@ -36,12 +36,12 @@ export default function ChessGame() {
     if (game.isGameOver() || !engine.current) return;
 
     const turn = game.turn(); // 'w' or 'b'
-    const engineTurn = playerColor === "white" ? "b" : "w";
+    const engineTurn = playerColor === "w" ? "b" : "w";
 
     if (turn === engineTurn && !engineThinkingRef.current) {
       console.debug("Engine turn detected. Thinking...");
       engineThinkingRef.current = true;
-      
+
       // Defer state update to avoid linter warning and cascading renders
       setTimeout(() => setIsEngineThinking(true), 0);
 
@@ -83,17 +83,17 @@ export default function ChessGame() {
     targetSquare: string | null;
   }): boolean {
     console.debug("onDrop called:", { sourceSquare, targetSquare });
-    
+
     if (game.isGameOver()) {
       console.debug("Move rejected: Game is over");
       return false;
     }
-    
+
     if (engineThinkingRef.current) {
       console.debug("Move rejected: Engine is thinking");
       return false;
     }
-    
+
     if (!targetSquare) {
       console.debug("Move rejected: No target square");
       return false;
@@ -101,10 +101,10 @@ export default function ChessGame() {
 
     // Ensure it's the player's turn
     const turn = game.turn();
-    const playerTurn = playerColor === "white" ? "w" : "b";
-    
+    const playerTurn = playerColor === "w" ? "w" : "b";
+
     console.debug("Turn check:", { turn, playerTurn });
-    
+
     if (turn !== playerTurn) {
       console.debug("Move rejected: Not player's turn");
       return false;
@@ -139,9 +139,9 @@ export default function ChessGame() {
   function startNewGame(asWhite: boolean) {
     const newGame = new Chess();
     setGame(newGame);
-    setPlayerColor(asWhite ? "white" : "black");
+    setPlayerColor(asWhite ? "w" : "b");
     setIsEngineThinking(false);
-    
+
     // Reset engine
     if (engine.current) {
       engine.current.send("ucinewgame");
@@ -170,7 +170,7 @@ export default function ChessGame() {
               options={{
                 position: game.fen(),
                 onPieceDrop: onDrop,
-                boardOrientation: playerColor,
+                boardOrientation: playerColor === "w" ? "white" : "black",
                 animationDurationInMs: 200,
                 darkSquareStyle: { backgroundColor: "#7c6f64" },
                 lightSquareStyle: { backgroundColor: "#d5c4a1" },
