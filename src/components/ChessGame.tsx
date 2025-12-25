@@ -3,6 +3,7 @@
 import CoachPanel from "@/components/CoachPanel";
 import NewGameCard from "@/components/NewGameCard";
 import { Badge } from "@/components/ui/badge";
+import { Arrow } from "@/lib/coach-agent";
 import { StockfishEngine } from "@/lib/stockfish";
 import { Chess, Color } from "chess.js";
 import { Loader2 } from "lucide-react";
@@ -13,6 +14,7 @@ export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
   const [playerColor, setPlayerColor] = useState<Color>("w");
   const [isEngineThinking, setIsEngineThinking] = useState(false);
+  const [arrows, setArrows] = useState<Arrow[]>([]);
   const engineThinkingRef = useRef(false);
   const engine = useRef<StockfishEngine | null>(null);
 
@@ -144,6 +146,7 @@ export default function ChessGame() {
     setGame(newGame);
     setPlayerColor(asWhite ? "w" : "b");
     setIsEngineThinking(false);
+    setArrows([]);
 
     // Reset engine
     if (engine.current) {
@@ -151,6 +154,14 @@ export default function ChessGame() {
       engine.current.send("isready");
     }
   }
+
+  const handleDrawArrow = useCallback((arrow: Arrow) => {
+    setArrows(prev => [...prev, arrow]);
+  }, []);
+
+  const handleClearArrows = useCallback(() => {
+    setArrows([]);
+  }, []);
 
   // Get game status
   function getStatus() {
@@ -172,9 +183,10 @@ export default function ChessGame() {
             <Chessboard
               options={{
                 position: game.fen(),
-                onPieceDrop: onDrop,
+                onPieceDrop: (args) => onDrop(args),
                 boardOrientation: playerColor === "w" ? "white" : "black",
                 animationDurationInMs: 200,
+                arrows: arrows,
                 darkSquareStyle: { backgroundColor: "#7c6f64" },
                 lightSquareStyle: { backgroundColor: "#d5c4a1" },
                 boardStyle: {
@@ -215,6 +227,8 @@ export default function ChessGame() {
           moveHistory={game.history().join(" ")}
           lastMove={game.history().length > 0 ? game.history()[game.history().length - 1] : null}
           playerColor={playerColor}
+          onDrawArrow={handleDrawArrow}
+          onClearArrows={handleClearArrows}
         />
       </div>
     </div>

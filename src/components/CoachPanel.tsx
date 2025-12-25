@@ -1,9 +1,13 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Arrow, createCoachAgent } from "@/lib/coach-agent";
+import { OpenAIRealtimeWebRTC, RealtimeSession } from '@openai/agents/realtime';
 import { Color } from "chess.js";
-import { Loader2 } from "lucide-react";
+import { Loader2, Mic, MicOff, Settings } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface CoachPanelProps {
@@ -11,104 +15,376 @@ interface CoachPanelProps {
     moveHistory: string;
     lastMove: string | null;
     playerColor: Color;
+    onDrawArrow: (arrow: Arrow) => void;
+    onClearArrows: () => void;
 }
 
-export default function CoachPanel({ fen, moveHistory, lastMove, playerColor }: CoachPanelProps) {
+export default function CoachPanel({
+    fen,
+    moveHistory,
+    lastMove,
+    playerColor,
+    onDrawArrow,
+    onClearArrows
+}: CoachPanelProps) {
     const [analysis, setAnalysis] = useState<string>("");
-    const [isLoading, setIsLoading] = useState(false);
+    const [isConnected, setIsConnected] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
+    const [transcript, setTranscript] = useState<string>("");
+    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+    const [isTestingAudio, setIsTestingAudio] = useState(false);
+
+    const sessionRef = useRef<RealtimeSession | null>(null);
     const lastProcessedMove = useRef<string | null>(null);
-    const abortControllerRef = useRef<AbortController | null>(null);
+    const audioElementRef = useRef<HTMLAudioElement | null>(null);
 
-    const analyzeMove = useCallback(async (move: string) => {
-        // Abort previous request if it's still running
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
+    const cleanupSession = useCallback(() => {
+        if (sessionRef.current) {
+            try {
+                sessionRef.current.close();
+            } catch (e) {
+                console.error("Error closing session:", e);
+            }
+            sessionRef.current = null;
         }
+        if (audioElementRef.current) {
+            audioElementRef.current.pause();
+            audioElementRef.current.srcObject = null;
+            audioElementRef.current = null;
+        }
+        setIsConnected(false);
+    }, []);
 
-        setIsLoading(true);
-        setAnalysis("");
-
-        const abortController = new AbortController();
-        abortControllerRef.current = abortController;
-
+    const testAudio = useCallback(async () => {
+        setIsTestingAudio(true);
         try {
-            const response = await fetch("/api/coach", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    messages: [{ role: "user", content: `Explain the last move: ${move}` }],
-                    fen,
-                    history: moveHistory,
-                    playerColor,
-                }),
-                signal: abortController.signal,
-            });
-
-            if (!response.ok) throw new Error("Failed to fetch analysis");
-            if (!response.body) throw new Error("No response body");
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                setAnalysis((prev) => prev + chunk);
-            }
+            // Create a simple test tone using Web Audio API
+            const audioContext = new AudioContext();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 440; // A4 note
+            gainNode.gain.value = 0.3; // 30% volume
+            
+            oscillator.start();
+            console.log('[Audio Test] Playing 440Hz tone for 1 second');
+            
+            // Play for 1 second
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            oscillator.stop();
+            audioContext.close();
+            console.log('[Audio Test] Done');
         } catch (error) {
-            if (error instanceof Error && error.name !== "AbortError") {
-                console.error("Analysis error:", error);
-                setAnalysis("Sorry, I couldn't analyze this move.");
-            }
+            console.error('[Audio Test] Failed:', error);
         } finally {
-            if (abortControllerRef.current === abortController) {
-                setIsLoading(false);
-            }
+            setIsTestingAudio(false);
         }
-    }, [fen, moveHistory, playerColor]);
+    }, []);
+
+    const refreshDevices = useCallback(async () => {
+        try {
+            const allDevices = await navigator.mediaDevices.enumerateDevices();
+            const audioDevices = allDevices.filter(d => d.kind === 'audioinput');
+            setDevices(audioDevices);
+            if (audioDevices.length > 0 && !selectedDeviceId) {
+                const defaultDevice = audioDevices.find(d => d.deviceId === 'default') || audioDevices[0];
+                setSelectedDeviceId(defaultDevice.deviceId);
+            }
+        } catch (e) {
+            console.error("Error enumerating devices:", e);
+        }
+    }, [selectedDeviceId]);
 
     useEffect(() => {
-        if (lastMove && lastMove !== lastProcessedMove.current) {
-            lastProcessedMove.current = lastMove;
-            analyzeMove(lastMove);
+        refreshDevices();
+        navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
+        return () => {
+            navigator.mediaDevices.removeEventListener('devicechange', refreshDevices);
+        };
+    }, [refreshDevices]);
+
+    const connectCoach = async () => {
+        console.log('[Connect Coach] Starting...', { isConnected });
+        
+        // If already connected, just disconnect
+        if (isConnected) {
+            console.log('[Connect Coach] Already connected, disconnecting');
+            cleanupSession();
+            return;
         }
-    }, [lastMove, analyzeMove]);
+
+        // Ensure any existing session is fully cleaned up before starting a new one
+        cleanupSession();
+
+        console.log('[Connect Coach] Setting isConnecting to true');
+        setIsConnecting(true);
+        try {
+            // Request permissions first if we don't have them to get labels
+            if (devices.some(d => !d.label)) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    stream.getTracks().forEach(t => t.stop()); // Stop immediately
+                    await refreshDevices();
+                } catch (e) {
+                    console.warn("Could not get microphone permission for labels:", e);
+                }
+            }
+
+            const response = await fetch("/api/realtime/session", { method: "POST" });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to get ephemeral key: ${errorText}`);
+            }
+
+            const data = await response.json();
+            const ephemeralKey = data.value;
+            if (!ephemeralKey) {
+                console.error("No ephemeral key found in response data:", data);
+                throw new Error("No ephemeral key found in response");
+            }
+
+            // Get the specific media stream for the selected device
+            const mediaStream = await navigator.mediaDevices.getUserMedia({
+                audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+            });
+
+            // Create an audio element for playback
+            const audioElement = new Audio();
+            audioElement.autoplay = true;
+            audioElementRef.current = audioElement;
+            
+            // Log audio element state
+            console.log('[Audio Element Created]', {
+                autoplay: audioElement.autoplay,
+                muted: audioElement.muted,
+                volume: audioElement.volume
+            });
+            
+            // Don't try to play yet - wait for WebRTC to set up the stream
+            // The click on "Connect" button counts as user interaction for autoplay
+
+            const agent = createCoachAgent({
+                fen,
+                moveHistory,
+                playerColor,
+                onDrawArrow,
+                onClearArrows
+            });
+
+            // Instantiate transport with the specific media stream and audio element
+            const transport = new OpenAIRealtimeWebRTC({
+                mediaStream,
+                audioElement
+            });
+
+            const session = new RealtimeSession(agent, {
+                transport,
+                config: {
+                    audio: {
+                        input: {
+                            turnDetection: {
+                                type: 'semantic_vad',
+                                eagerness: 'medium',
+                                createResponse: true,  // Automatically create response after detecting end of speech
+                            }
+                        }
+                    }
+                }
+            });
+            sessionRef.current = session;
+
+            // Listen for all transport events for debugging
+            session.transport.on('*', (event: any) => {
+                console.log('[Transport Event]', event);
+                
+                // Log errors in detail
+                if (event.type === 'response.done' && event.response?.status === 'failed') {
+                    console.error('[Response Failed]', event.response.status_details);
+                }
+                if (event.type?.includes('failed') || event.type?.includes('error')) {
+                    console.error('[Event Error]', event);
+                }
+            });
+
+            // Listen for audio events
+            session.transport.on('audio', (event: any) => {
+                console.log('[Audio received]', event.data?.byteLength || 0, 'bytes');
+            });
+
+            // Listen for audio transcript deltas
+            session.transport.on('audio_transcript_delta', (event: any) => {
+                console.log('[Transcript delta]', event.delta);
+                setTranscript(prev => prev + (event.delta || ""));
+            });
+
+            // Clear transcript when turn is done
+            session.transport.on('turn_done', () => {
+                console.log('[Turn done]');
+                setTranscript("");
+            });
+
+            session.on('error', (err: any) => {
+                console.error("Session error:", err);
+                cleanupSession(); // Clean up on internal session errors
+            });
+
+            console.log('[Connecting to session...]', { ephemeralKey: ephemeralKey.substring(0, 10) + '...' });
+            
+            // Add a timeout to the connection attempt
+            const connectPromise = session.connect({ apiKey: ephemeralKey });
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Connection timeout after 30 seconds')), 30000)
+            );
+            
+            await Promise.race([connectPromise, timeoutPromise]);
+            
+            console.log('[Connected successfully]');
+
+            // Re-check if we were cleaned up during the async connect call
+            if (sessionRef.current === session) {
+                setIsConnected(true);
+                console.log('[Session active and connected]');
+                
+                // Explicitly ensure audio element is ready to play
+                // The "Connect" button click counts as user interaction
+                if (audioElementRef.current && audioElementRef.current.paused) {
+                    try {
+                        await audioElementRef.current.play();
+                        console.log('[Audio Element] Started playback after connection');
+                    } catch (e) {
+                        console.warn('[Audio Element] Could not start playback:', e);
+                        // This is okay - audio will start when WebRTC provides the stream
+                    }
+                }
+            } else {
+                console.log('[Session was cleaned up during connection, closing]');
+                session.close();
+            }
+        } catch (error) {
+            console.error("Connection error:", error);
+            setAnalysis("Failed to connect to the voice coach. Please check microphone permissions.");
+            cleanupSession();
+        } finally {
+            setIsConnecting(false);
+        }
+    };
+
+    // Update context when moves are made
+    useEffect(() => {
+        if (isConnected && sessionRef.current && lastMove && lastMove !== lastProcessedMove.current) {
+            lastProcessedMove.current = lastMove;
+
+            const updateMsg = `New move played: ${lastMove}. Current FEN: ${fen}. History: ${moveHistory}. Explain the implications of this move and update the analysis UI if there is something important to note.`;
+
+            sessionRef.current.sendMessage(updateMsg);
+        }
+    }, [lastMove, fen, moveHistory, isConnected, playerColor]);
+
+    useEffect(() => {
+        return () => {
+            cleanupSession();
+        };
+    }, [cleanupSession]);
 
     return (
-        <Card className="flex flex-col h-full min-h-[300px] bg-card border-border overflow-hidden gap-0 py-0">
-            <CardHeader className="px-4 py-3 border-b border-border bg-muted/30 flex flex-row items-center justify-between space-y-0 grid-cols-none">
+        <Card className="flex flex-col flex-1 h-full min-h-0 bg-card border-border overflow-hidden gap-0 py-0">
+            <CardHeader className="px-4 py-3 border-b border-border bg-muted/30 flex flex-row items-center justify-between space-y-0 grid-cols-none shrink-0">
                 <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    AI Coach
+                    AI Coach (Voice)
                 </CardTitle>
-                {isLoading && (
-                    <div className="flex gap-1">
-                        <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
-                    </div>
-                )}
+                <div className="flex items-center gap-1">
+                    {!isConnected && !isConnecting && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                                    <Settings className="w-3.5 h-3.5" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-64">
+                                <DropdownMenuLabel>Microphone Settings</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {devices.length === 0 ? (
+                                    <DropdownMenuItem disabled>No microphones found</DropdownMenuItem>
+                                ) : (
+                                    devices.map((device) => (
+                                        <DropdownMenuItem
+                                            key={device.deviceId}
+                                            onClick={() => setSelectedDeviceId(device.deviceId)}
+                                            className="flex items-center justify-between gap-2"
+                                        >
+                                            <span className="truncate flex-1">
+                                                {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}
+                                            </span>
+                                            {selectedDeviceId === device.deviceId && (
+                                                <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                                            )}
+                                        </DropdownMenuItem>
+                                    ))
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={refreshDevices} className="text-xs justify-center text-muted-foreground">
+                                    Refresh Devices
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={testAudio} disabled={isTestingAudio} className="text-xs justify-center text-muted-foreground">
+                                    {isTestingAudio ? "Testing Audio..." : "Test Audio Output"}
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
+                    <Button
+                        variant={isConnected ? "destructive" : "default"}
+                        size="sm"
+                        className="h-8 gap-2"
+                        onClick={connectCoach}
+                        disabled={isConnecting}
+                    >
+                        {isConnecting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : isConnected ? (
+                            <>
+                                <MicOff className="w-3.5 h-3.5" />
+                                Disconnect
+                            </>
+                        ) : (
+                            <>
+                                <Mic className="w-3.5 h-3.5" />
+                                Connect Coach
+                            </>
+                        )}
+                    </Button>
+                </div>
             </CardHeader>
 
             <ScrollArea className="flex-1">
                 <CardContent className="p-4 font-sans text-sm leading-relaxed">
-                    {!lastMove ? (
-                        <p className="text-text-muted italic">
-                            Make a move to start receiving coaching...
+                    {!isConnected && !isConnecting && !analysis ? (
+                        <p className="text-muted-foreground italic text-center py-8">
+                            Connect the voice coach to start receiving live analysis and ask questions.
                         </p>
                     ) : (
                         <div className="prose prose-invert prose-sm max-w-none">
-                            {analysis ? (
-                                <div className="text-foreground whitespace-pre-wrap coaching-message">
+                            {transcript && (
+                                <div className="text-foreground animate-pulse mb-4">
+                                    <span className="text-primary mr-2 font-bold">Zuggy:</span>
+                                    {transcript}
+                                </div>
+                            )}
+                            {analysis && (
+                                <div className="text-foreground whitespace-pre-wrap coaching-message p-3 bg-muted/20 rounded-md border border-border/50">
                                     {analysis}
                                 </div>
-                            ) : isLoading ? (
-                                <div className="flex items-center gap-2 text-text-muted animate-pulse">
-                                    <span>Analyzing position</span>
-                                    <div className="flex gap-1">
-                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                    </div>
-                                </div>
-                            ) : null}
+                            )}
+                            {isConnected && !transcript && !analysis && (
+                                <p className="text-primary/70 animate-pulse text-center py-4">
+                                    Coach is listening...
+                                </p>
+                            )}
                         </div>
                     )}
                 </CardContent>

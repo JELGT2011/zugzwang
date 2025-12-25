@@ -25,8 +25,8 @@ export default function NewGameCard({
   const hasStarted = moveHistory.length > 0;
 
   return (
-    <Card className="bg-card border-border overflow-hidden min-w-[280px] gap-0 py-0">
-      <CardHeader className="flex flex-row items-center justify-between px-4 py-3 border-b border-border bg-muted/30 space-y-0 grid-cols-none">
+    <Card className="bg-card border-border overflow-hidden min-w-[280px] gap-0 py-0 flex flex-col flex-1">
+      <CardHeader className="flex flex-row items-center justify-between px-4 py-3 border-b border-border bg-muted/30 space-y-0 grid-cols-none shrink-0">
         <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
           {hasStarted ? "Game" : "New Game"}
         </CardTitle>
@@ -44,12 +44,12 @@ export default function NewGameCard({
         )}
       </CardHeader>
 
-      <CardContent className="p-4">
+      <CardContent className="p-4 flex-1 min-h-0">
         {!hasStarted ? (
           /* Color selection when game hasn't started */
-          <div className="space-y-4">
+          <div className="space-y-4 flex flex-col justify-center h-full">
             <div className="space-y-3">
-              <p className="text-sm text-text-muted">Choose your color</p>
+              <p className="text-sm text-text-muted text-center">Choose your color</p>
               <div className="flex gap-2">
                 <Button
                   variant={playerColor === "w" ? "default" : "outline"}
@@ -72,9 +72,9 @@ export default function NewGameCard({
           </div>
         ) : (
           /* Move history when game has started */
-          <div className="space-y-3">
+          <div className="space-y-3 flex flex-col h-full">
             {/* Current status */}
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-sm shrink-0">
               <span className="text-text-muted">Playing as</span>
               <Badge variant="outline" className="font-medium capitalize flex items-center gap-1">
                 {playerColor === "w" ? "♔" : "♚"} {playerColor === "w" ? "White" : "Black"}
@@ -83,15 +83,15 @@ export default function NewGameCard({
 
             {/* Game over banner */}
             {isGameOver && (
-              <Badge variant="destructive" className="w-full justify-center py-2 text-sm font-semibold">
+              <Badge variant="destructive" className="w-full justify-center py-2 text-sm font-semibold shrink-0">
                 {gameStatus}
               </Badge>
             )}
 
             {/* Move list */}
-            <div className="space-y-2">
-              <h3 className="text-xs text-text-muted uppercase tracking-wide">Moves</h3>
-              <ScrollArea className="h-[200px] pr-4">
+            <div className="space-y-2 flex-1 flex flex-col min-h-0">
+              <h3 className="text-xs text-text-muted uppercase tracking-wide shrink-0">Moves</h3>
+              <ScrollArea className="flex-1 pr-4">
                 <div className="grid grid-cols-[auto_1fr_1fr] gap-x-3 gap-y-1 text-sm font-mono">
                   {Array.from({ length: Math.ceil(moveHistory.length / 2) }).map((_, i) => {
                     const whiteMove = moveHistory[i * 2];
