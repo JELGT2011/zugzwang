@@ -1,15 +1,6 @@
 "use client";
 
-import dynamic from "next/dynamic";
-
-const ChessGame = dynamic(() => import("@/components/ChessGame"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="text-text-muted">Loading...</div>
-    </div>
-  ),
-});
+import ChessGame from "@/components/ChessGame";
 
 export default function Home() {
   return (

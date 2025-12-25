@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack --port 3001",
     "build": "next build",
-    "start": "next start --port 3001",
+    "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
@@ -17,7 +17,6 @@
     "react": "19.2.3",
     "react-chessboard": "^5.8.6",
     "react-dom": "19.2.3",
-    "stockfish": "^17.1.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
