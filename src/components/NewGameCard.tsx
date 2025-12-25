@@ -1,6 +1,11 @@
 "use client";
 
 import { Move, Color } from "chess.js";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { RotateCcw } from "lucide-react";
 
 interface NewGameCardProps {
   playerColor: Color;
@@ -20,50 +25,48 @@ export default function NewGameCard({
   const hasStarted = moveHistory.length > 0;
 
   return (
-    <div className="bg-surface rounded-xl border border-border overflow-hidden min-w-[280px]">
-      {/* Header with reset button */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-black/20">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted">
+    <Card className="bg-card border-border overflow-hidden min-w-[280px] gap-0 py-0">
+      <CardHeader className="flex flex-row items-center justify-between px-4 py-3 border-b border-border bg-muted/30 space-y-0 grid-cols-none">
+        <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
           {hasStarted ? "Game" : "New Game"}
-        </h2>
+        </CardTitle>
         {hasStarted && (
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => onNewGame(playerColor === "w")}
-            className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors"
+            className="h-7 text-[10px] uppercase tracking-wider px-2 hover:bg-background/50"
             title="Reset game"
           >
-            ↺ Reset
-          </button>
+            <RotateCcw className="w-3 h-3 mr-1" />
+            Reset
+          </Button>
         )}
-      </div>
+      </CardHeader>
 
-      <div className="p-4">
+      <CardContent className="p-4">
         {!hasStarted ? (
           /* Color selection when game hasn't started */
           <div className="space-y-4">
             <div className="space-y-3">
               <p className="text-sm text-text-muted">Choose your color</p>
               <div className="flex gap-2">
-                <button
+                <Button
+                  variant={playerColor === "w" ? "default" : "outline"}
                   onClick={() => onNewGame(true)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${playerColor === "w"
-                    ? "bg-white/20 ring-2 ring-white/40"
-                    : "bg-white/5 hover:bg-white/10"
-                    }`}
+                  className="flex-1 h-auto py-3 flex flex-col gap-1"
                 >
                   <span className="text-2xl">♔</span>
                   <span className="font-medium">White</span>
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant={playerColor === "b" ? "default" : "outline"}
                   onClick={() => onNewGame(false)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all border border-border ${playerColor === "b"
-                    ? "bg-black/40 ring-2 ring-white/40"
-                    : "bg-black/20 hover:bg-black/30"
-                    }`}
+                  className="flex-1 h-auto py-3 flex flex-col gap-1"
                 >
                   <span className="text-2xl">♚</span>
                   <span className="font-medium">Black</span>
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -73,22 +76,22 @@ export default function NewGameCard({
             {/* Current status */}
             <div className="flex items-center justify-between text-sm">
               <span className="text-text-muted">Playing as</span>
-              <span className="font-medium capitalize flex items-center gap-1">
-                {playerColor === "w" ? "♔" : "♚"} {playerColor}
-              </span>
+              <Badge variant="outline" className="font-medium capitalize flex items-center gap-1">
+                {playerColor === "w" ? "♔" : "♚"} {playerColor === "w" ? "White" : "Black"}
+              </Badge>
             </div>
 
             {/* Game over banner */}
             {isGameOver && (
-              <div className="bg-accent-bright/20 rounded-lg p-3 border border-accent-bright/30">
-                <p className="text-sm font-semibold text-accent-bright">{gameStatus}</p>
-              </div>
+              <Badge variant="destructive" className="w-full justify-center py-2 text-sm font-semibold">
+                {gameStatus}
+              </Badge>
             )}
 
             {/* Move list */}
             <div className="space-y-2">
               <h3 className="text-xs text-text-muted uppercase tracking-wide">Moves</h3>
-              <div className="max-h-[200px] overflow-y-auto">
+              <ScrollArea className="h-[200px] pr-4">
                 <div className="grid grid-cols-[auto_1fr_1fr] gap-x-3 gap-y-1 text-sm font-mono">
                   {Array.from({ length: Math.ceil(moveHistory.length / 2) }).map((_, i) => {
                     const whiteMove = moveHistory[i * 2];
@@ -102,11 +105,11 @@ export default function NewGameCard({
                     );
                   })}
                 </div>
-              </div>
+              </ScrollArea>
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

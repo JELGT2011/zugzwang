@@ -1,5 +1,8 @@
 "use client";
 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface CoachPanelProps {
@@ -71,44 +74,42 @@ export default function CoachPanel({ fen, moveHistory, lastMove }: CoachPanelPro
     }, [lastMove, analyzeMove]);
 
     return (
-        <div className="bg-surface rounded-xl border border-border overflow-hidden flex flex-col h-full min-h-[300px]">
-            <div className="px-4 py-3 border-b border-border bg-black/20 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted">
+        <Card className="flex flex-col h-full min-h-[300px] bg-card border-border overflow-hidden gap-0 py-0">
+            <CardHeader className="px-4 py-3 border-b border-border bg-muted/30 flex flex-row items-center justify-between space-y-0 grid-cols-none">
+                <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     AI Coach
-                </h2>
+                </CardTitle>
                 {isLoading && (
                     <div className="flex gap-1">
-                        <span className="w-1.5 h-1.5 bg-accent-bright rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                        <span className="w-1.5 h-1.5 bg-accent-bright rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                        <span className="w-1.5 h-1.5 bg-accent-bright rounded-full animate-bounce"></span>
+                        <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
                     </div>
                 )}
-            </div>
+            </CardHeader>
 
-            <div className="p-4 flex-1 overflow-y-auto font-sans text-sm leading-relaxed space-y-4">
-                {!lastMove ? (
-                    <p className="text-text-muted italic">
-                        Make a move to start receiving coaching...
-                    </p>
-                ) : (
-                    <div className="prose prose-invert prose-sm max-w-none">
-                        {analysis ? (
-                            <div className="text-foreground whitespace-pre-wrap coaching-message">
-                                {analysis}
-                            </div>
-                        ) : isLoading ? (
-                            <div className="flex items-center gap-2 text-text-muted animate-pulse">
-                                <span>Analyzing position</span>
-                                <div className="flex gap-1">
-                                    <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                                    <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                                    <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce"></span>
+            <ScrollArea className="flex-1">
+                <CardContent className="p-4 font-sans text-sm leading-relaxed">
+                    {!lastMove ? (
+                        <p className="text-text-muted italic">
+                            Make a move to start receiving coaching...
+                        </p>
+                    ) : (
+                        <div className="prose prose-invert prose-sm max-w-none">
+                            {analysis ? (
+                                <div className="text-foreground whitespace-pre-wrap coaching-message">
+                                    {analysis}
                                 </div>
-                            </div>
-                        ) : null}
-                    </div>
-                )}
-            </div>
-        </div>
+                            ) : isLoading ? (
+                                <div className="flex items-center gap-2 text-text-muted animate-pulse">
+                                    <span>Analyzing position</span>
+                                    <div className="flex gap-1">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    )}
+                </CardContent>
+            </ScrollArea>
+        </Card>
     );
 }

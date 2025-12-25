@@ -6,6 +6,8 @@ import { StockfishEngine } from "@/lib/stockfish";
 import { Chess, Color } from "chess.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chessboard } from "react-chessboard";
+import { Badge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
 
 export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
@@ -184,8 +186,17 @@ export default function ChessGame() {
         </div>
 
         {/* Status */}
-        <div className="text-lg font-medium text-foreground">
-          {isEngineThinking ? "Stockfish is thinking..." : getStatus()}
+        <div className="flex items-center gap-3">
+          {isEngineThinking ? (
+            <Badge variant="secondary" className="px-4 py-1.5 text-sm flex gap-2 items-center">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Stockfish is thinking...
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="px-4 py-1.5 text-sm">
+              {getStatus()}
+            </Badge>
+          )}
         </div>
       </div>
 
