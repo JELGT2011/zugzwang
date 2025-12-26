@@ -101,13 +101,13 @@ export function Footer() {
             © {currentYear} Zugzwang. All rights reserved.
           </p>
           <div className="flex gap-6 text-sm text-muted-foreground">
-            <a href="#" className="hover:text-primary transition-colors">
+            <Link href="/privacy" className="hover:text-primary transition-colors">
               Privacy
-            </a>
-            <a href="#" className="hover:text-primary transition-colors">
+            </Link>
+            <Link href="/terms" className="hover:text-primary transition-colors">
               Terms
-            </a>
-            <a href="#" className="hover:text-primary transition-colors">
+            </Link>
+            <a href="mailto:contact@zugzwang.com" className="hover:text-primary transition-colors">
               Contact
             </a>
           </div>
