@@ -1,9 +1,10 @@
 import { create } from "zustand";
 
+export type ConnectionState = "disconnected" | "connecting" | "connected";
+
 interface CoachState {
     // Connection state
-    isConnected: boolean;
-    isConnecting: boolean;
+    connectionState: ConnectionState;
 
     // Audio devices
     devices: MediaDeviceInfo[];
@@ -15,8 +16,7 @@ interface CoachState {
     analysis: string;
 
     // Actions
-    setIsConnected: (connected: boolean) => void;
-    setIsConnecting: (connecting: boolean) => void;
+    setConnectionState: (state: ConnectionState) => void;
     setDevices: (devices: MediaDeviceInfo[]) => void;
     setSelectedDeviceId: (deviceId: string) => void;
     setIsTestingAudio: (testing: boolean) => void;
@@ -26,8 +26,7 @@ interface CoachState {
 }
 
 const initialState = {
-    isConnected: false,
-    isConnecting: false,
+    connectionState: "disconnected" as ConnectionState,
     devices: [],
     selectedDeviceId: "",
     isTestingAudio: false,
@@ -39,8 +38,7 @@ export const useCoachStore = create<CoachState>((set) => ({
     ...initialState,
 
     // Setters
-    setIsConnected: (connected) => set({ isConnected: connected }),
-    setIsConnecting: (connecting) => set({ isConnecting: connecting }),
+    setConnectionState: (connectionState) => set({ connectionState }),
     setDevices: (devices) => set({ devices }),
     setSelectedDeviceId: (deviceId) => set({ selectedDeviceId: deviceId }),
     setIsTestingAudio: (testing) => set({ isTestingAudio: testing }),

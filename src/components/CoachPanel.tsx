@@ -59,24 +59,53 @@ export default function CoachPanel() {
                 <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     AI Coach
                 </CardTitle>
-                {!isConnected && !isConnecting && (
+                {!isConnecting && (
                     <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                        <DropdownMenuTrigger asChild disabled={isConnected}>
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-muted-foreground"
+                                disabled={isConnected}
+                                title={isConnected ? "Disconnect to change microphone" : "Microphone settings"}
+                            >
                                 <Settings className="w-3.5 h-3.5" />
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-64">
                             <DropdownMenuLabel>Microphone Settings</DropdownMenuLabel>
+                            {isConnected && (
+                                <>
+                                    <DropdownMenuSeparator />
+                                    <div className="px-2 py-1.5 text-xs text-muted-foreground text-center">
+                                        Disconnect to change microphone
+                                    </div>
+                                </>
+                            )}
+                            <DropdownMenuSeparator />
+                            {/* Default device option */}
+                            <DropdownMenuItem
+                                onClick={() => setSelectedDeviceId("default")}
+                                className="flex items-center justify-between gap-2"
+                                disabled={isConnected}
+                            >
+                                <span className="truncate flex-1 font-medium">
+                                    System Default
+                                </span>
+                                {selectedDeviceId === "default" && (
+                                    <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                                )}
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {devices.length === 0 ? (
-                                <DropdownMenuItem disabled>No microphones found</DropdownMenuItem>
+                                <DropdownMenuItem disabled>No specific devices found</DropdownMenuItem>
                             ) : (
                                 devices.map((device) => (
                                     <DropdownMenuItem
                                         key={device.deviceId}
                                         onClick={() => setSelectedDeviceId(device.deviceId)}
                                         className="flex items-center justify-between gap-2"
+                                        disabled={isConnected}
                                     >
                                         <span className="truncate flex-1">
                                             {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}

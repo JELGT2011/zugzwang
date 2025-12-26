@@ -8,7 +8,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { Color } from "chess.js";
+import { useBoardController, useCoachController } from "@/hooks";
 
 interface NewGamePanelProps {
     isOpen: boolean;
@@ -21,9 +21,19 @@ export default function NewGamePanel({
     onClose,
     onStartGame,
 }: NewGamePanelProps) {
-    const handleColorSelect = (asWhite: boolean) => {
+    const { getFen, getMoveHistory } = useBoardController();
+    const { connect } = useCoachController();
+
+    const handleColorSelect = async (asWhite: boolean) => {
         onStartGame(asWhite);
         onClose();
+        
+        // Small delay to let the game state update
+        setTimeout(async () => {
+            const fen = getFen();
+            const moveHistory = getMoveHistory().map(m => m.san).join(" ");
+            await connect(fen, moveHistory);
+        }, 100);
     };
 
     return (
