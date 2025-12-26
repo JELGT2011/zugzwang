@@ -1,10 +1,10 @@
 import { useStockfish, type MoveAnnotation } from "@/contexts/StockfishContext";
-import { useBoardStore } from "@/stores";
 import { useCoachStore } from "@/stores/coachStore";
 import { OpenAIRealtimeWebRTC, RealtimeAgent, RealtimeSession, tool } from "@openai/agents/realtime";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Arrow } from "react-chessboard";
 import { z } from "zod";
+import { useBoardController } from "./useBoardController";
 
 // Zod schemas for coach tools
 const DrawArrowParameters = z.object({
@@ -28,13 +28,13 @@ const GetTopMovesParameters = z.object({
 /**
  * Creates the system instructions for the coach agent
  */
-function createCoachInstructions(
+const createCoachInstructions = (
     playerRole: string,
     engineRole: string,
     fen: string,
     moveHistory: string
-): string {
-    return `You are a Grandmaster Chess Coach named 'Zuggy'. 
+) => `
+You are a Grandmaster Chess Coach named 'Zuggy'. 
 Your goal is to explain the current state of the game and moves in a clear, engaging, and educational way.
 The human player is playing as ${playerRole} and you are playing as ${engineRole}.
 Current position (FEN): ${fen}
@@ -52,13 +52,9 @@ IMPORTANT: You are not just coaching - you are also playing as ${engineRole}. Wh
 4. Use draw_arrow to highlight the move you made or key tactical ideas
 
 When it's the player's turn (${playerRole}), provide brief, encouraging coaching about the position.
-
 Be encouraging and insightful. Keep your responses extremely concise as they are spoken.
-
-
 Any mention of a square, or a piece, should be accompanied by either an arrow or a highlight.
 `;
-}
 
 /**
  * Creates the tools available to the coach agent
@@ -156,10 +152,13 @@ export function useCoachController() {
     const isConnected = connectionState === "connected";
     const isConnecting = connectionState === "connecting";
 
-    // Get board state and actions (needed for coach context)
-    const playerColor = useBoardStore((state) => state.playerColor);
-    const addArrow = useBoardStore((state) => state.addArrow);
-    const makeMove = useBoardStore((state) => state.makeMove);
+    const { playerColor, addArrow, makeMove, getFen, getLastMove, getMoveHistory, game } = useBoardController();
+
+    // Get actual values (not functions) so we can watch them in useEffect
+    const fen = getFen();
+    const lastMove = getLastMove();
+    const moveHistory = getMoveHistory();
+    const currentTurn = game.turn();
 
     // Get stockfish context for analysis
     const { getTopMoves } = useStockfish();
@@ -533,13 +532,42 @@ export function useCoachController() {
         return lastProcessedMove.current;
     }, []);
 
+    // Watch for moves and send updates to the coach
+    // Only send messages for player moves, not agent's own moves
+    useEffect(() => {
+        if (!isConnected) return;
+
+        if (lastMove && lastMove !== lastProcessedMove.current) {
+            lastProcessedMove.current = lastMove;
+
+            // Check whose turn it is now
+            // If it's NOT the player's turn, that means the player just moved (should notify agent)
+            // If it IS the player's turn, that means the agent just moved (don't notify - agent knows its own move)
+            const isPlayersTurn = currentTurn === playerColor;
+
+            if (!isPlayersTurn) {
+                // Player just moved, notify the agent
+                const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
+                const updateMsg = `New move played: ${lastMove}. Current FEN: ${fen}. History: ${moveHistoryStr}. Briefly explain the implications of this move.`;
+
+                console.debug("[sendMessage] Player moved, sending update to agent", updateMsg);
+                sendMessage(updateMsg);
+            } else {
+                console.debug("[sendMessage] Agent made its own move, skipping notification");
+            }
+        }
+    }, [isConnected, lastMove, fen, moveHistory, currentTurn, playerColor, sendMessage]);
+
     // Cleanup on unmount
     useEffect(() => {
         return cleanupSession;
     }, [cleanupSession]);
 
     // Wrapper to initiate connection with device selection
-    const initiateConnection = useCallback(async (fen: string, moveHistory: string) => {
+    const initiateConnection = useCallback(async () => {
+        // Get current board state
+        const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
+
         // Refresh devices first
         await refreshDevices();
 
@@ -553,13 +581,13 @@ export function useCoachController() {
 
         if (hasMultipleInputs || hasMultipleOutputs) {
             // Show device selection modal
-            setPendingConnection({ fen, moveHistory });
+            setPendingConnection({ fen, moveHistory: moveHistoryStr });
             setShowDeviceModal(true);
         } else {
             // No device choice needed, connect immediately
-            await connect(fen, moveHistory);
+            await connect(fen, moveHistoryStr);
         }
-    }, [refreshDevices, connect]);
+    }, [fen, moveHistory, refreshDevices, connect]);
 
     const confirmDeviceSelection = useCallback(async () => {
         if (pendingConnection) {

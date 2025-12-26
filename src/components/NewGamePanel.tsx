@@ -8,7 +8,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { useBoardController, useCoachController } from "@/hooks";
+import { useCoachController } from "@/hooks";
 
 interface NewGamePanelProps {
     isOpen: boolean;
@@ -21,18 +21,15 @@ export default function NewGamePanel({
     onClose,
     onStartGame,
 }: NewGamePanelProps) {
-    const { getFen, getMoveHistory } = useBoardController();
     const { initiateConnection } = useCoachController();
 
     const handleColorSelect = async (asWhite: boolean) => {
         onStartGame(asWhite);
         onClose();
         
-        // Small delay to let the game state update
-        setTimeout(async () => {
-            const fen = getFen();
-            const moveHistory = getMoveHistory().map(m => m.san).join(" ");
-            await initiateConnection(fen, moveHistory);
+        // Small delay to let the game state update, then initiate coach connection
+        setTimeout(() => {
+            initiateConnection();
         }, 100);
     };
 

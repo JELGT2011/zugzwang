@@ -5,13 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useBoardController, useCoachController } from "@/hooks";
+import { useCoachController } from "@/hooks";
 import { Loader2, Mic, MicOff, Settings } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 
-// CoachPanel is now a smart component that gets its data from the controllers
+// CoachPanel is now a purely presentational component
 export default function CoachPanel() {
-    const { getFen, getLastMove, getMoveHistory } = useBoardController();
     const {
         isConnected,
         isConnecting,
@@ -31,15 +30,10 @@ export default function CoachPanel() {
         setSelectedInputDeviceId,
         setSelectedOutputDeviceId,
         setShowDeviceModal,
-        sendMessage,
-        updateLastProcessedMove,
-        getLastProcessedMove,
     } = useCoachController();
 
-    const fen = getFen();
-    const moveHistory = getMoveHistory().join(" ");
-    const lastMove = getLastMove();
     const scrollAreaRef = useRef<HTMLDivElement>(null);
+    const scrollBottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         refreshDevices();
@@ -53,26 +47,18 @@ export default function CoachPanel() {
         if (isConnected) {
             cleanupSession();
         } else {
-            initiateConnection(fen, moveHistory);
+            // initiateConnection will get current fen/moveHistory from board controller internally
+            initiateConnection();
         }
-    }, [isConnected, cleanupSession, initiateConnection, fen, moveHistory]);
+    }, [isConnected, cleanupSession, initiateConnection]);
 
-    // Update context when moves are made
+    // Auto-scroll to bottom whenever messages change
     useEffect(() => {
-        if (isConnected && lastMove && lastMove !== getLastProcessedMove()) {
-            updateLastProcessedMove(lastMove);
-            const updateMsg = `New move played: ${lastMove}. Current FEN: ${fen}. History: ${moveHistory}. Briefly explain the implications of this move.`;
-            sendMessage(updateMsg);
-        }
-    }, [lastMove, fen, moveHistory, isConnected, sendMessage, updateLastProcessedMove, getLastProcessedMove]);
-
-    // Auto-scroll to show last 2 messages
-    useEffect(() => {
-        if (scrollAreaRef.current) {
-            const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
-            if (scrollContainer) {
-                scrollContainer.scrollTop = scrollContainer.scrollHeight;
-            }
+        if (scrollBottomRef.current) {
+            // Use setTimeout to ensure DOM has fully updated
+            setTimeout(() => {
+                scrollBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }, 0);
         }
     }, [transcriptHistory, transcript]);
 
@@ -132,7 +118,7 @@ export default function CoachPanel() {
                 </div>
             </CardHeader>
 
-            <ScrollArea className="flex-1" ref={scrollAreaRef}>
+            <ScrollArea className="flex-1 overflow-hidden" ref={scrollAreaRef}>
                 <CardContent className="p-4 font-sans text-sm leading-relaxed">
                     {!isConnected && !isConnecting ? (
                         <div className="flex flex-col items-center justify-center py-8 gap-2">
@@ -177,6 +163,8 @@ export default function CoachPanel() {
                                     )}
                                 </>
                             )}
+                            {/* Invisible element to scroll to */}
+                            <div ref={scrollBottomRef} />
                         </div>
                     )}
                 </CardContent>

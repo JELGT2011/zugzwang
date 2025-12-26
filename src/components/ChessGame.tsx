@@ -94,7 +94,7 @@ export default function ChessGame() {
       </div>
 
       {/* Side Panel */}
-      <div className="flex flex-col gap-4 lg:w-[280px] shrink-0">
+      <div className="flex flex-col gap-4 lg:w-[280px] shrink-0 h-[calc(100vh-12rem)] max-h-[800px]">
         {hasGameStarted && (
           <GameControlsPanel onNewGame={openNewGameModal} />
         )}
