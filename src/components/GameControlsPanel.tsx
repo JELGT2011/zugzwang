@@ -4,24 +4,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Color, Move } from "chess.js";
+import { useBoardController } from "@/hooks";
 import { RotateCcw } from "lucide-react";
 
 interface GameControlsPanelProps {
-    playerColor: Color;
-    moveHistory: Move[];
-    isGameOver: boolean;
-    gameStatus: string;
     onNewGame: () => void;
 }
 
-export default function GameControlsPanel({
-    playerColor,
-    moveHistory,
-    isGameOver,
-    gameStatus,
-    onNewGame,
-}: GameControlsPanelProps) {
+export default function GameControlsPanel({ onNewGame }: GameControlsPanelProps) {
+    const { playerColor, getMoveHistory, isGameOver, getStatus } = useBoardController();
+    const moveHistory = getMoveHistory();
+    const gameIsOver = isGameOver();
+    const gameStatus = getStatus();
+
     return (
         <Card className="bg-card border-border overflow-hidden min-w-[280px] gap-0 py-0 flex flex-col flex-1">
             <CardHeader className="flex flex-row items-center justify-between px-4 py-3 border-b border-border bg-muted/30 space-y-0 grid-cols-none shrink-0">
@@ -51,7 +46,7 @@ export default function GameControlsPanel({
                     </div>
 
                     {/* Game over banner */}
-                    {isGameOver && (
+                    {gameIsOver && (
                         <Badge variant="destructive" className="w-full justify-center py-2 text-sm font-semibold shrink-0">
                             {gameStatus}
                         </Badge>
@@ -85,4 +80,3 @@ export default function GameControlsPanel({
         </Card>
     );
 }
-

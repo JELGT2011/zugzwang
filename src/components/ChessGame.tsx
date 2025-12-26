@@ -9,7 +9,7 @@ import { useBoardController } from "@/hooks";
 import { Chess } from "chess.js";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Chessboard, type Arrow } from "react-chessboard";
+import { Chessboard } from "react-chessboard";
 
 export default function ChessGame() {
   // Board controller
@@ -20,11 +20,7 @@ export default function ChessGame() {
     hasGameStarted,
     makeMove,
     startNewGame,
-    addArrow,
-    clearArrows,
     getStatus,
-    getMoveHistory,
-    getLastMove,
     isGameOver,
     getFen,
     isPlayerTurn,
@@ -116,22 +112,6 @@ export default function ChessGame() {
     setIsNewGameModalOpen(true);
   }
 
-  const handleDrawArrow = useCallback(
-    (arrow: Arrow) => {
-      addArrow(arrow);
-    },
-    [addArrow]
-  );
-
-  const handleHighlightSquare = useCallback((square: string) => {
-    // TODO: Implement square highlighting
-    console.log("Highlight square:", square);
-  }, []);
-
-  const handleClearArrows = useCallback(() => {
-    clearArrows();
-  }, [clearArrows]);
-
   return (
     <div className="flex flex-col lg:flex-row gap-6 w-full max-w-[1100px] mx-auto p-4">
       {/* Chess Board */}
@@ -174,24 +154,9 @@ export default function ChessGame() {
       {/* Side Panel */}
       <div className="flex flex-col gap-4 lg:w-[280px] shrink-0">
         {hasGameStarted && (
-          <GameControlsPanel
-            playerColor={playerColor}
-            moveHistory={getMoveHistory()}
-            isGameOver={isGameOver()}
-            gameStatus={getStatus()}
-            onNewGame={openNewGameModal}
-          />
+          <GameControlsPanel onNewGame={openNewGameModal} />
         )}
-
-        <CoachPanel
-          fen={getFen()}
-          moveHistory={game.history().join(" ")}
-          lastMove={getLastMove()}
-          playerColor={playerColor}
-          onDrawArrow={handleDrawArrow}
-          onHighlightSquare={handleHighlightSquare}
-          onClearArrows={handleClearArrows}
-        />
+        <CoachPanel />
       </div>
 
       {/* New Game Modal */}

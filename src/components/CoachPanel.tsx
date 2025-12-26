@@ -4,32 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useBoardController } from "@/hooks";
 import { createCoachAgent } from "@/lib/coach-agent";
 import { OpenAIRealtimeWebRTC, RealtimeSession } from '@openai/agents/realtime';
-import { Color } from "chess.js";
 import { Loader2, Mic, MicOff, Settings } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Arrow } from "react-chessboard";
 
-interface CoachPanelProps {
-    fen: string;
-    moveHistory: string;
-    lastMove: string | null;
-    playerColor: Color;
-    onDrawArrow: (arrow: Arrow) => void;
-    onHighlightSquare: (square: string, color: string) => void;
-    onClearArrows: () => void;
-}
-
-export default function CoachPanel({
-    fen,
-    moveHistory,
-    lastMove,
-    playerColor,
-    onDrawArrow,
-    onHighlightSquare,
-    onClearArrows,
-}: CoachPanelProps) {
+// CoachPanel is now a smart component that gets its data from the board controller
+export default function CoachPanel() {
+    const { game, playerColor, getFen, getLastMove, addArrow } = useBoardController();
+    const fen = getFen();
+    const moveHistory = game.history().join(" ");
+    const lastMove = getLastMove();
     const [analysis, setAnalysis] = useState<string>("");
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
@@ -181,7 +167,7 @@ export default function CoachPanel({
                 fen,
                 moveHistory,
                 playerColor,
-                onDrawArrow,
+                onDrawArrow: addArrow,
             });
 
             // Instantiate transport with the specific media stream and audio element
