@@ -4,8 +4,9 @@ import CoachPanel from "@/components/CoachPanel";
 import GameControlsPanel from "@/components/GameControlsPanel";
 import NewGamePanel from "@/components/NewGamePanel";
 import { Badge } from "@/components/ui/badge";
-import { useBoardController } from "@/hooks";
-import { useState } from "react";
+import { useBoardController, useCoachController } from "@/hooks";
+import { Chess } from "chess.js";
+import { useCallback, useState } from "react";
 import { Chessboard } from "react-chessboard";
 
 export default function ChessGame() {
@@ -21,8 +22,24 @@ export default function ChessGame() {
     getFen,
   } = useBoardController();
 
+  // Coach controller
+  const { initiateConnection } = useCoachController();
+
   // Local UI state
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(true);
+
+  // Start new game and connect coach
+  const handleStartGame = useCallback((asWhite: boolean) => {
+    startNewGame(asWhite);
+
+    // Connect coach with initial board state
+    const initialGame = new Chess();
+    initiateConnection({
+      fen: initialGame.fen(),
+      moveHistory: "",
+      boardAscii: initialGame.ascii()
+    });
+  }, [startNewGame, initiateConnection]);
 
   // Handle player move
   function onDrop({
@@ -105,7 +122,7 @@ export default function ChessGame() {
       <NewGamePanel
         isOpen={isNewGameModalOpen}
         onClose={() => setIsNewGameModalOpen(false)}
-        onStartGame={startNewGame}
+        onStartGame={handleStartGame}
       />
     </div>
   );

@@ -58,20 +58,24 @@ IMPORTANT: You are not just coaching - you are also playing as ${engineRole}. Wh
 1. Use get_top_moves to analyze the position
 2. Use make_move to execute the best move for ${engineRole}
 3. Briefly explain your move choice (1-2 sentences max)
-4. Use draw_arrow to highlight the tactical reasoning behind the move (e.g., an attack, a defense, or a key square). DO NOT simply highlight the move itself (the board already does this).
+4. MANDATORY: Use draw_arrow to highlight the tactical reasoning (e.g., an attack, defense, or key square). NEVER just talk without drawing at least one arrow to illustrate your point.
 
-ARROW USAGE & TACTICAL GROUNDING:
-- Use draw_arrow to explain *why* a move is good or bad based on Stockfish analysis.
-- If Stockfish identifies a threat, draw an arrow from the threatening piece to the target.
-- If a move is made to attack a piece, highlight that attack.
-- If a move defends a square, highlight the defense.
-- Focus on the "reasoning" provided in the Stockfish threats or top lines.
+ARROW USAGE IS MANDATORY:
+- You must use draw_arrow for EVERY explanation. If you mention a piece or square, you MUST draw an arrow involving it.
+- VISUALIZE THE ANALYSIS: Use the provided Stockfish "Threats" and "Defenses" data to draw arrows.
+- COLOR CODING:
+    - Use "red" for threats (from attacker to target).
+    - Use "green" for general positional ideas.
+    - Use "blue" for defenses (from defender to protected piece).
+- If Stockfish identifies a threat (e.g., "Threat: Qh5 attacks f7"), draw a RED arrow from h5 to f7.
+- If a move defends a piece, draw a BLUE arrow from the defender to the piece.
 
 CONCISENESS IS CRITICAL:
-- Your responses are spoken aloud. Keep them extremely brief and focused.
+- Your responses are spoken aloud. Keep the SPOKEN text extremely brief and focused.
+- Tool calls (like draw_arrow) are NOT considered "verbose"—use them generously to illustrate your points.
 - During the opening (first 10-15 moves), do not provide deep analysis unless specifically asked or if something very unusual happens. Just name the opening or make your move quickly.
 - Avoid repeating information. If the user has questions, they will ask.
-- Any mention of a square or piece should be accompanied by an arrow (draw_arrow).
+- Any mention of a square or piece MUST be accompanied by an arrow (draw_arrow).
 `;
 
 /**
@@ -86,7 +90,7 @@ function createCoachTools(
     return [
         tool({
             name: 'draw_arrow',
-            description: 'Draw an arrow on the chessboard to highlight a move or threat.',
+            description: 'Draw a tactical arrow on the chessboard. MANDATORY: Use this whenever you mention a piece, square, threat, or move to provide visual context. Use "red" for threats, "green" for moves/suggestions, and "blue" for positional ideas.',
             parameters: DrawArrowParameters,
             strict: true,
             execute: async ({ from, to, color }: z.infer<typeof DrawArrowParameters>) => {
@@ -133,7 +137,8 @@ function createCoachTools(
                         move: m.san,
                         evaluation: m.evaluation,
                         mate: m.mate,
-                        threats: m.threats,
+                        threats: m.threats.map(t => `${t.from}->${t.to} (${t.piece})`),
+                        defenses: m.defends.map(d => `${d.from}->${d.to} (${d.piece})`),
                     }))
                 };
             }
@@ -191,7 +196,7 @@ export function useCoachController() {
     const sessionRef = useRef<RealtimeSession | null>(null);
     const audioElementRef = useRef<HTMLAudioElement | null>(null);
     const lastProcessedMove = useRef<string | null>(null);
-    const pendingMoveMessage = useRef<string | null>(null);
+    const messageQueue = useRef<string[]>([]);
     const isResponseActive = useRef<boolean>(false);
     const currentUserTranscript = useRef<string>("");
 
@@ -211,7 +216,7 @@ export function useCoachController() {
         }
         // Reset state tracking refs
         isResponseActive.current = false;
-        pendingMoveMessage.current = null;
+        messageQueue.current = [];
         lastProcessedMove.current = null;
 
         setConnectionState("disconnected");
@@ -362,7 +367,7 @@ export function useCoachController() {
                 const agent = new RealtimeAgent({
                     name: 'Zuggy',
                     instructions: createCoachInstructions(playerRole, engineRole, moveHistory, boardAscii),
-                    tools: createCoachTools(addArrow, makeMove, getTopMoves, getFen)
+                    tools: createCoachTools(addArrow, makeMove, getTopMoves, getFen),
                 });
 
                 // Instantiate transport with the specific media stream and audio element
@@ -398,11 +403,16 @@ export function useCoachController() {
                     if (event.type === "response.done") {
                         isResponseActive.current = false;
 
-                        // If there's a pending move message, send it now
-                        if (pendingMoveMessage.current && sessionRef.current) {
-                            console.debug("[Sending pending move message]", pendingMoveMessage.current);
-                            sessionRef.current.sendMessage(pendingMoveMessage.current);
-                            pendingMoveMessage.current = null;
+                        // If there are pending messages in the queue, send them now
+                        if (messageQueue.current.length > 0 && sessionRef.current) {
+                            console.debug(`[Queue] Processing ${messageQueue.current.length} queued messages`);
+                            while (messageQueue.current.length > 0) {
+                                const msg = messageQueue.current.shift();
+                                if (msg) {
+                                    console.debug("[Queue] Sending message:", msg);
+                                    sessionRef.current.sendMessage(msg);
+                                }
+                            }
                         }
                     }
 
@@ -537,8 +547,8 @@ export function useCoachController() {
 
         // If a response is already active, queue this message for later
         if (isResponseActive.current) {
-            console.debug("[sendMessage] Response active, queueing message");
-            pendingMoveMessage.current = message;
+            console.debug("[sendMessage] Response active, queueing message:", message);
+            messageQueue.current.push(message);
         } else {
             // Otherwise send immediately
             console.debug("[sendMessage] Sending message immediately");
@@ -572,15 +582,21 @@ export function useCoachController() {
                     // Player just moved, notify the agent with Stockfish analysis
                     const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
                     const boardAscii = game.ascii();
-                    
+
                     // Get Stockfish analysis for the new position
                     // We analyze from the agent's perspective (it's now the agent's turn to move or react)
                     const analysis = await getTopMoves(fen, 3, 15);
-                    const analysisStr = analysis.map((m, i) => 
-                        `${i+1}. ${m.san} (Eval: ${m.evaluation}${m.mate ? `, Mate in ${m.mate}` : ''})${m.threats ? ` - Threats: ${m.threats}` : ''}`
-                    ).join('\n');
+                    const analysisStr = analysis.map((m, i) => {
+                        const threatStr = m.threats.length > 0 
+                            ? `\n   - Threats: ${m.threats.map(t => `${t.from}->${t.to} (${t.piece})`).join(', ')}` 
+                            : '';
+                        const defenseStr = m.defends.length > 0 
+                            ? `\n   - Defenses: ${m.defends.map(d => `${d.from}->${d.to} (${d.piece})`).join(', ')}` 
+                            : '';
+                        return `${i + 1}. ${m.san} (Eval: ${m.evaluation}${m.mate ? `, Mate in ${m.mate}` : ''})${threatStr}${defenseStr}`;
+                    }).join('\n');
 
-                    const updateMsg = `Player played: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nStockfish Analysis of current position:\n${analysisStr}\n\nUsing this analysis, briefly explain the implications of the player's move and the current state of the game.`;
+                    const updateMsg = `Player played: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nStockfish Analysis of current position:\n${analysisStr}\n\nUsing this analysis, briefly explain the implications of the player's move and the current state of the game. Use draw_arrow (RED for threats, BLUE for defenses, GREEN for your ideas) to visualize the specific piece interactions found by Stockfish.`;
 
                     console.debug("[sendMessage] Player moved, sending update to agent with analysis", updateMsg);
                     sendMessage(updateMsg);
@@ -599,10 +615,11 @@ export function useCoachController() {
     }, [cleanupSession]);
 
     // Wrapper to initiate connection with device selection
-    const initiateConnection = useCallback(async () => {
-        // Get current board state
-        const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
-        const boardAscii = game.ascii();
+    const initiateConnection = useCallback(async (overrides?: { fen: string, moveHistory: string, boardAscii: string }) => {
+        // Get current board state or use overrides
+        const moveHistoryStr = overrides ? overrides.moveHistory : moveHistory.map(m => m.san).join(" ");
+        const boardAsciiStr = overrides ? overrides.boardAscii : game.ascii();
+        const fenStr = overrides ? overrides.fen : fen;
 
         // Refresh devices first
         await refreshDevices();
@@ -617,11 +634,11 @@ export function useCoachController() {
 
         if (hasMultipleInputs || hasMultipleOutputs) {
             // Show device selection modal
-            setPendingConnection({ fen, moveHistory: moveHistoryStr, boardAscii });
+            setPendingConnection({ fen: fenStr, moveHistory: moveHistoryStr, boardAscii: boardAsciiStr });
             setShowDeviceModal(true);
         } else {
             // No device choice needed, connect immediately
-            await connect(fen, moveHistoryStr, boardAscii);
+            await connect(fenStr, moveHistoryStr, boardAsciiStr);
         }
     }, [fen, moveHistory, game, refreshDevices, connect]);
 

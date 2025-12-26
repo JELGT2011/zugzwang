@@ -2,8 +2,6 @@
 
 ## TODO
 - [ ] improve agent robustness and accuracy
-    - [ ] give agent more stockfish access, and constrain recommendations by stockfish's evaluation
-    - [ ] ensure agent game state is consistent with board representation
     - [ ] consolidate message pattern
 - [ ] load game from fen (or pgn)
 - [ ] improve QoL

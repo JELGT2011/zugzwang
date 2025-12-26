@@ -1,7 +1,7 @@
 "use client";
 
 import { StockfishEngine } from "@/lib/stockfish";
-import { Chess } from "chess.js";
+import { Chess, Square } from "chess.js";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 export interface MoveAnnotation {
@@ -14,8 +14,8 @@ export interface MoveAnnotation {
     isCapture: boolean;
     capturedPiece: string | null;
     promotionPiece: string | null;
-    threats: string[]; // Pieces threatened after this move
-    defends: string[]; // Pieces defended after this move
+    threats: Array<{ from: string, to: string, piece: string }>; // Detailed threats
+    defends: Array<{ from: string, to: string, piece: string }>; // Detailed defenses
 }
 
 interface StockfishContextType {
@@ -29,69 +29,69 @@ interface StockfishContextType {
 const StockfishContext = createContext<StockfishContextType | undefined>(undefined);
 
 // Helper function to analyze threats in a position
-function analyzeThreatsSafe(game: Chess, colorWhoMoved: 'w' | 'b'): string[] {
-    const threats: string[] = [];
-    const opponentColor = colorWhoMoved === 'w' ? 'b' : 'w';
+function analyzeThreats(game: Chess, colorWhoMoved: 'w' | 'b'): Array<{ from: string, to: string, piece: string }> {
+    const threats: Array<{ from: string, to: string, piece: string }> = [];
 
-    try {
-        // Get all squares with opponent pieces
-        const board = game.board();
-        for (let rank = 0; rank < 8; rank++) {
-            for (let file = 0; file < 8; file++) {
-                const piece = board[rank][file];
-                if (piece && piece.color === opponentColor) {
-                    const square = String.fromCharCode(97 + file) + (8 - rank);
+    // Create a copy and set the turn to the color that just moved
+    const tokens = game.fen().split(' ');
+    tokens[1] = colorWhoMoved;
+    const tempGame = new Chess(tokens.join(' '));
 
-                    // Check if any of our pieces can attack this square
-                    const moves = game.moves({ verbose: true, square: undefined });
-                    const attacking = moves.some(m => m.to === square && m.color === colorWhoMoved);
-
-                    if (attacking) {
-                        threats.push(`${piece.type}${square}`);
-                    }
-                }
-            }
+    // In a single pass, every move that captures a piece is a threat
+    const moves = tempGame.moves({ verbose: true });
+    for (const move of moves) {
+        if (move.captured) {
+            threats.push({
+                from: move.from,
+                to: move.to,
+                piece: move.captured
+            });
         }
-    } catch (error) {
-        console.error("Error analyzing threats:", error);
     }
 
     return threats;
 }
 
 // Helper function to analyze defended pieces
-function analyzeDefensesSafe(game: Chess, colorWhoMoved: 'w' | 'b'): string[] {
-    const defends: string[] = [];
+function analyzeDefenses(game: Chess, colorWhoMoved: 'w' | 'b'): Array<{ from: string, to: string, piece: string }> {
+    const defends: Array<{ from: string, to: string, piece: string }> = [];
 
-    try {
-        // Get all squares with our pieces
-        const board = game.board();
-        for (let rank = 0; rank < 8; rank++) {
-            for (let file = 0; file < 8; file++) {
-                const piece = board[rank][file];
-                if (piece && piece.color === colorWhoMoved) {
-                    const square = String.fromCharCode(97 + file) + (8 - rank);
+    const board = game.board();
+    const opponentColor = colorWhoMoved === 'w' ? 'b' : 'w';
+    
+    // Prepare FEN with turn set to our color
+    const tokens = game.fen().split(' ');
+    tokens[1] = colorWhoMoved;
+    const baseFen = tokens.join(' ');
 
-                    // Create a temporary copy to test if this piece is defended
-                    // by seeing if we have moves that protect it
-                    const tempGame = new Chess(game.fen());
+    for (let rank = 0; rank < 8; rank++) {
+        for (let file = 0; file < 8; file++) {
+            const piece = board[rank][file];
+            
+            // CRITICAL: Skip the King. chess.js crashes if moves() is called without a King.
+            if (piece && piece.color === colorWhoMoved && piece.type !== 'k') {
+                const square = (String.fromCharCode(97 + file) + (8 - rank)) as Square;
+                
+                // Only check if actually defended to save cycles
+                if (game.isAttacked(square, colorWhoMoved)) {
+                    const tempGame = new Chess(baseFen);
+                    // Replace our piece with an opponent pawn to make it a legal "capture" target
+                    tempGame.remove(square);
+                    tempGame.put({ type: 'p', color: opponentColor }, square);
+                    
                     const moves = tempGame.moves({ verbose: true });
-
-                    // Check if any of our pieces can move to defend this square
-                    // This is simplified - a more accurate version would check actual attacks
-                    const defending = moves.some(m => {
-                        // If we can move to this square, it's defended
-                        return m.to === square && m.color === colorWhoMoved;
-                    });
-
-                    if (defending) {
-                        defends.push(`${piece.type}${square}`);
+                    for (const move of moves) {
+                        if (move.to === square) {
+                            defends.push({
+                                from: move.from,
+                                to: square,
+                                piece: piece.type
+                            });
+                        }
                     }
                 }
             }
         }
-    } catch (error) {
-        console.error("Error analyzing defenses:", error);
     }
 
     return defends;
@@ -221,8 +221,8 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
 
                                 if (moveResult) {
                                     // Analyze threats and defenses in the resulting position
-                                    const threats = analyzeThreatsSafe(gameCopy, moveResult.color);
-                                    const defends = analyzeDefensesSafe(gameCopy, moveResult.color);
+                                    const threats = analyzeThreats(gameCopy, moveResult.color);
+                                    const defends = analyzeDefenses(gameCopy, moveResult.color);
 
                                     annotations.push({
                                         move: pvData.move,
