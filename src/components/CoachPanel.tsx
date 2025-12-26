@@ -61,7 +61,7 @@ export default function CoachPanel({
         isResponseActive.current = false;
         pendingMoveMessage.current = null;
         lastProcessedMove.current = null;
-        
+
         setIsConnected(false);
     }, []);
 
@@ -72,19 +72,19 @@ export default function CoachPanel({
             const audioContext = new AudioContext();
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
-            
+
             oscillator.connect(gainNode);
             gainNode.connect(audioContext.destination);
-            
+
             oscillator.frequency.value = 440; // A4 note
             gainNode.gain.value = 0.3; // 30% volume
-            
+
             oscillator.start();
             console.log('[Audio Test] Playing 440Hz tone for 1 second');
-            
+
             // Play for 1 second
             await new Promise(resolve => setTimeout(resolve, 1000));
-            
+
             oscillator.stop();
             audioContext.close();
             console.log('[Audio Test] Done');
@@ -119,7 +119,7 @@ export default function CoachPanel({
 
     const connectCoach = async () => {
         console.log('[Connect Coach] Starting...', { isConnected });
-        
+
         // If already connected, just disconnect
         if (isConnected) {
             console.log('[Connect Coach] Already connected, disconnecting');
@@ -166,14 +166,14 @@ export default function CoachPanel({
             const audioElement = new Audio();
             audioElement.autoplay = true;
             audioElementRef.current = audioElement;
-            
+
             // Log audio element state
             console.log('[Audio Element Created]', {
                 autoplay: audioElement.autoplay,
                 muted: audioElement.muted,
                 volume: audioElement.volume
             });
-            
+
             // Don't try to play yet - wait for WebRTC to set up the stream
             // The click on "Connect" button counts as user interaction for autoplay
 
@@ -209,7 +209,7 @@ export default function CoachPanel({
             // Listen for all transport events for debugging
             session.transport.on('*', (event: any) => {
                 console.log('[Transport Event]', event);
-                
+
                 // Track response lifecycle
                 if (event.type === 'response.created') {
                     isResponseActive.current = true;
@@ -218,7 +218,7 @@ export default function CoachPanel({
                 if (event.type === 'response.done') {
                     isResponseActive.current = false;
                     console.log('[Response] Ended');
-                    
+
                     // If there's a pending move message, send it now
                     if (pendingMoveMessage.current && sessionRef.current) {
                         console.log('[Sending pending move message]', pendingMoveMessage.current);
@@ -226,7 +226,7 @@ export default function CoachPanel({
                         pendingMoveMessage.current = null;
                     }
                 }
-                
+
                 // Log errors in detail
                 if (event.type === 'response.done' && event.response?.status === 'failed') {
                     console.error('[Response Failed]', event.response.status_details);
@@ -263,22 +263,22 @@ export default function CoachPanel({
             });
 
             console.log('[Connecting to session...]', { ephemeralKey: ephemeralKey.substring(0, 10) + '...' });
-            
+
             // Add a timeout to the connection attempt
             const connectPromise = session.connect({ apiKey: ephemeralKey });
-            const timeoutPromise = new Promise((_, reject) => 
+            const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Connection timeout after 30 seconds')), 30000)
             );
-            
+
             await Promise.race([connectPromise, timeoutPromise]);
-            
+
             console.log('[Connected successfully]');
 
             // Re-check if we were cleaned up during the async connect call
             if (sessionRef.current === session) {
                 setIsConnected(true);
                 console.log('[Session active and connected]');
-                
+
                 // Explicitly ensure audio element is ready to play
                 // The "Connect" button click counts as user interaction
                 if (audioElementRef.current && audioElementRef.current.paused) {
@@ -332,92 +332,109 @@ export default function CoachPanel({
         <Card className="flex flex-col flex-1 h-full min-h-0 bg-card border-border overflow-hidden gap-0 py-0">
             <CardHeader className="px-4 py-3 border-b border-border bg-muted/30 flex flex-row items-center justify-between space-y-0 grid-cols-none shrink-0">
                 <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    AI Coach (Voice)
+                    AI Coach
                 </CardTitle>
-                <div className="flex items-center gap-1">
-                    {!isConnected && !isConnecting && (
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                                    <Settings className="w-3.5 h-3.5" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-64">
-                                <DropdownMenuLabel>Microphone Settings</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                {devices.length === 0 ? (
-                                    <DropdownMenuItem disabled>No microphones found</DropdownMenuItem>
-                                ) : (
-                                    devices.map((device) => (
-                                        <DropdownMenuItem
-                                            key={device.deviceId}
-                                            onClick={() => setSelectedDeviceId(device.deviceId)}
-                                            className="flex items-center justify-between gap-2"
-                                        >
-                                            <span className="truncate flex-1">
-                                                {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}
-                                            </span>
-                                            {selectedDeviceId === device.deviceId && (
-                                                <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                                            )}
-                                        </DropdownMenuItem>
-                                    ))
-                                )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={refreshDevices} className="text-xs justify-center text-muted-foreground">
-                                    Refresh Devices
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={testAudio} disabled={isTestingAudio} className="text-xs justify-center text-muted-foreground">
-                                    {isTestingAudio ? "Testing Audio..." : "Test Audio Output"}
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    )}
-                    <Button
-                        variant={isConnected ? "destructive" : "default"}
-                        size="sm"
-                        className="h-8 gap-2"
-                        onClick={connectCoach}
-                        disabled={isConnecting}
-                    >
-                        {isConnecting ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : isConnected ? (
-                            <>
-                                <MicOff className="w-3.5 h-3.5" />
-                                Disconnect
-                            </>
-                        ) : (
-                            <>
-                                <Mic className="w-3.5 h-3.5" />
-                                Connect Coach
-                            </>
-                        )}
-                    </Button>
-                </div>
+                {!isConnected && !isConnecting && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                                <Settings className="w-3.5 h-3.5" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-64">
+                            <DropdownMenuLabel>Microphone Settings</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {devices.length === 0 ? (
+                                <DropdownMenuItem disabled>No microphones found</DropdownMenuItem>
+                            ) : (
+                                devices.map((device) => (
+                                    <DropdownMenuItem
+                                        key={device.deviceId}
+                                        onClick={() => setSelectedDeviceId(device.deviceId)}
+                                        className="flex items-center justify-between gap-2"
+                                    >
+                                        <span className="truncate flex-1">
+                                            {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}
+                                        </span>
+                                        {selectedDeviceId === device.deviceId && (
+                                            <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                                        )}
+                                    </DropdownMenuItem>
+                                ))
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={refreshDevices} className="text-xs justify-center text-muted-foreground">
+                                Refresh Devices
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={testAudio} disabled={isTestingAudio} className="text-xs justify-center text-muted-foreground">
+                                {isTestingAudio ? "Testing Audio..." : "Test Audio Output"}
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
             </CardHeader>
 
             <ScrollArea className="flex-1">
                 <CardContent className="p-4 font-sans text-sm leading-relaxed">
                     {!isConnected && !isConnecting && !analysis ? (
-                        <p className="text-muted-foreground italic text-center py-8">
-                            Connect the voice coach to start receiving live analysis and ask questions.
-                        </p>
-                    ) : (
-                        <div className="prose prose-invert prose-sm max-w-none">
-                            {transcript && (
-                                <div className="text-foreground mb-4">
-                                    <span className="text-primary mr-2 font-bold">Zuggy:</span>
-                                    {transcript}
-                                </div>
-                            )}
-                            {analysis && (
-                                <div className="text-foreground whitespace-pre-wrap coaching-message p-3 bg-muted/20 rounded-md border border-border/50">
-                                    {analysis}
-                                </div>
-                            )}
+                        <div className="flex flex-col items-center justify-center py-8 gap-4">
+                            <p className="text-muted-foreground italic text-center">
+                                Connect the voice coach to start receiving live analysis and ask questions.
+                            </p>
+                            <Button
+                                variant="default"
+                                size="lg"
+                                className="gap-2"
+                                onClick={connectCoach}
+                                disabled={isConnecting}
+                            >
+                                <Mic className="w-4 h-4" />
+                                Connect Coach
+                            </Button>
                         </div>
+                    ) : (
+                        <>
+                            <div className="flex justify-center mb-4">
+                                <Button
+                                    variant={isConnected ? "destructive" : "default"}
+                                    size="lg"
+                                    className="gap-2"
+                                    onClick={connectCoach}
+                                    disabled={isConnecting}
+                                >
+                                    {isConnecting ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Connecting...
+                                        </>
+                                    ) : isConnected ? (
+                                        <>
+                                            <MicOff className="w-4 h-4" />
+                                            Disconnect
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Mic className="w-4 h-4" />
+                                            Connect Coach
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                            <div className="prose prose-invert prose-sm max-w-none">
+                                {transcript && (
+                                    <div className="text-foreground mb-4">
+                                        <span className="text-primary mr-2 font-bold">Zuggy:</span>
+                                        {transcript}
+                                    </div>
+                                )}
+                                {analysis && (
+                                    <div className="text-foreground whitespace-pre-wrap coaching-message p-3 bg-muted/20 rounded-md border border-border/50">
+                                        {analysis}
+                                    </div>
+                                )}
+                            </div>
+                        </>
                     )}
                 </CardContent>
             </ScrollArea>
