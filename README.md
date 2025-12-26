@@ -7,9 +7,6 @@
     - [ ] update prompt to be more concise (especially in openings)
     - [ ] provide agent with text representation (instead of fen)
     - [ ] consolidate message pattern
-- [ ] fix `Chess.js` and `zustand` integration
-    - [ ] fix game history
-    - [ ] clear arrows on position change
 - [ ] load game from fen (or pgn)
 - [ ] improve QoL
     - [ ] do not use default audio input/output devices

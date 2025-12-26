@@ -1,29 +1,31 @@
 import { useBoardStore } from "@/stores";
 import { Chess, Move } from "chess.js";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import type { Arrow } from "react-chessboard";
 
 /**
  * BoardController hook - provides a clean interface to the board state and actions.
  * Acts as a proxy/facade to the underlying Zustand store.
+ * Reconstructs Chess instance from FEN when needed for computed values.
  */
 export function useBoardController() {
-    // Get store state
-    const game = useBoardStore((state) => state.game);
+    // Get store state (all serializable)
+    const fen = useBoardStore((state) => state.fen);
+    const moveHistory = useBoardStore((state) => state.moveHistory);
     const playerColor = useBoardStore((state) => state.playerColor);
     const arrows = useBoardStore((state) => state.arrows);
     const hasGameStarted = useBoardStore((state) => state.hasGameStarted);
 
     // Get store actions
-    const storeSetGame = useBoardStore((state) => state.setGame);
     const storeMakeMove = useBoardStore((state) => state.makeMove);
     const storeStartNewGame = useBoardStore((state) => state.startNewGame);
     const storeAddArrow = useBoardStore((state) => state.addArrow);
     const storeClearArrows = useBoardStore((state) => state.clearArrows);
-    const storeGetStatus = useBoardStore((state) => state.getStatus);
-    const storeGetMoveHistory = useBoardStore((state) => state.getMoveHistory);
-    const storeGetLastMove = useBoardStore((state) => state.getLastMove);
-    const storeIsGameOver = useBoardStore((state) => state.isGameOver);
+
+    // Reconstruct Chess instance from FEN (memoized)
+    const game = useMemo(() => {
+        return new Chess(fen);
+    }, [fen]);
 
     // Wrap actions in useCallback for stable references
     const makeMove = useCallback(
@@ -51,25 +53,35 @@ export function useBoardController() {
         storeClearArrows();
     }, [storeClearArrows]);
 
+    // Computed values from the reconstructed Chess instance
     const getStatus = useCallback(() => {
-        return storeGetStatus();
-    }, [storeGetStatus]);
+        if (game.isCheckmate()) {
+            return game.turn() === "w"
+                ? "Black wins by checkmate!"
+                : "White wins by checkmate!";
+        }
+        if (game.isStalemate()) return "Draw by stalemate";
+        if (game.isDraw()) return "Draw";
+        if (game.isCheck())
+            return game.turn() === "w" ? "White is in check" : "Black is in check";
+        return game.turn() === "w" ? "White to move" : "Black to move";
+    }, [game]);
 
     const getMoveHistory = useCallback((): Move[] => {
-        return storeGetMoveHistory();
-    }, [storeGetMoveHistory]);
+        return moveHistory;
+    }, [moveHistory]);
 
     const getLastMove = useCallback((): string | null => {
-        return storeGetLastMove();
-    }, [storeGetLastMove]);
+        return moveHistory.length > 0 ? moveHistory[moveHistory.length - 1].san : null;
+    }, [moveHistory]);
 
     const isGameOver = useCallback((): boolean => {
-        return storeIsGameOver();
-    }, [storeIsGameOver]);
+        return game.isGameOver();
+    }, [game]);
 
     const getFen = useCallback(() => {
-        return game.fen();
-    }, [game]);
+        return fen;
+    }, [fen]);
 
     const getTurn = useCallback(() => {
         return game.turn();
@@ -79,27 +91,20 @@ export function useBoardController() {
         return game.turn() === playerColor;
     }, [game, playerColor]);
 
-    // Expose internal setGame for engine moves (temporary until we refactor engine logic)
-    const setGame = useCallback(
-        (newGame: Chess) => {
-            storeSetGame(newGame);
-        },
-        [storeSetGame]
-    );
-
     return {
         // State
-        game,
+        game, // Reconstructed Chess instance for compatibility
         playerColor,
         arrows,
         hasGameStarted,
+        fen,
+        moveHistory,
 
         // Actions
         makeMove,
         startNewGame,
         addArrow,
         clearArrows,
-        setGame,
 
         // Computed/getters
         getStatus,

@@ -26,7 +26,7 @@ export default function NewGamePanel({
     const handleColorSelect = async (asWhite: boolean) => {
         onStartGame(asWhite);
         onClose();
-        
+
         // Small delay to let the game state update, then initiate coach connection
         setTimeout(() => {
             initiateConnection();

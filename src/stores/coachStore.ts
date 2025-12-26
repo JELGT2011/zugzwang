@@ -56,26 +56,26 @@ export const useCoachStore = create<CoachState>()(
             ...initialState,
 
             // Setters
-            setConnectionState: (connectionState) => set({ connectionState }),
-            setInputDevices: (inputDevices) => set({ inputDevices }),
-            setOutputDevices: (outputDevices) => set({ outputDevices }),
-            setSelectedInputDeviceId: (selectedInputDeviceId) => set({ selectedInputDeviceId }),
-            setSelectedOutputDeviceId: (selectedOutputDeviceId) => set({ selectedOutputDeviceId }),
-            setIsTestingAudio: (testing) => set({ isTestingAudio: testing }),
+            setConnectionState: (connectionState) => set({ connectionState }, false, "setConnectionState"),
+            setInputDevices: (inputDevices) => set({ inputDevices }, false, "setInputDevices"),
+            setOutputDevices: (outputDevices) => set({ outputDevices }, false, "setOutputDevices"),
+            setSelectedInputDeviceId: (selectedInputDeviceId) => set({ selectedInputDeviceId }, false, "setSelectedInputDeviceId"),
+            setSelectedOutputDeviceId: (selectedOutputDeviceId) => set({ selectedOutputDeviceId }, false, "setSelectedOutputDeviceId"),
+            setIsTestingAudio: (testing) => set({ isTestingAudio: testing }, false, "setIsTestingAudio"),
             setTranscript: (transcript) =>
                 set((state) => ({
                     transcript: typeof transcript === "function" ? transcript(state.transcript) : transcript,
-                })),
+                }), false, "setTranscript"),
 
             // Transcript history management
             addToHistory: (message) =>
                 set((state) => ({
                     transcriptHistory: [...state.transcriptHistory, message],
-                })),
-            clearHistory: () => set({ transcriptHistory: [] }),
+                }), false, "addToHistory"),
+            clearHistory: () => set({ transcriptHistory: [] }, false, "clearHistory"),
 
             // Reset to initial state
-            reset: () => set(initialState),
+            reset: () => set(initialState, false, "reset"),
         }),
         { name: "CoachStore" }
     )
