@@ -12,7 +12,6 @@ export interface CoachAgentOptions {
     moveHistory: string;
     playerColor: 'w' | 'b';
     onDrawArrow: (arrow: Arrow) => void;
-    onClearArrows: () => void;
 }
 
 const DrawArrowParameters = z.object({
@@ -21,12 +20,16 @@ const DrawArrowParameters = z.object({
     color: z.string().optional().describe('The color of the arrow (e.g., "red", "blue", "green"). Defaults to green.')
 });
 
+const HighlightSquareParameters = z.object({
+    square: z.string().describe('The square to highlight (e.g., "e2").'),
+    color: z.string().optional().describe('The color of the square (e.g., "red", "blue", "green"). Defaults to green.')
+});
+
 export function createCoachAgent({
     fen,
     moveHistory,
     playerColor,
     onDrawArrow,
-    onClearArrows
 }: CoachAgentOptions) {
     const playerRole = playerColor === 'w' ? 'White' : 'Black';
     const engineRole = playerColor === 'w' ? 'Black' : 'White';
@@ -39,12 +42,15 @@ The human player is playing as ${playerRole} and the engine (Stockfish) is playi
 Current position (FEN): ${fen}
 Move history: ${moveHistory}
 
-Be encouraging and insightful. Keep your responses relatively concise as they are spoken.
+Be encouraging and insightful. Keep your responses extremely concise as they are spoken.
 If the user asks questions about the position, use the provided context to answer.
 
 You have tools to interact with the chessboard:
 1. draw_arrow: Use this to point out specific moves, threats, or squares on the board.
-2. clear_arrows: Use this to remove all arrows from the board when they are no longer relevant.`,
+2. highlight_square: Use this to highlight a specific square on the board.
+
+Any mention of a square, or a piece, should be accompanied by either an arrow or a highlight.
+`,
         tools: [
             tool({
                 name: 'draw_arrow',
@@ -57,12 +63,12 @@ You have tools to interact with the chessboard:
                 }
             }),
             tool({
-                name: 'clear_arrows',
-                description: 'Clear all arrows currently drawn on the board.',
-                parameters: z.object({}),
+                name: 'highlight_square',
+                description: 'Highlight a specific square on the board.',
+                parameters: HighlightSquareParameters,
                 strict: true,
-                execute: async () => {
-                    onClearArrows();
+                execute: async ({ square, color }: z.infer<typeof HighlightSquareParameters>) => {
+                    onDrawArrow({ startSquare: square, endSquare: square, color: color || "green" });
                     return { status: "success" };
                 }
             })

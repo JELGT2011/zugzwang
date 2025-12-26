@@ -16,6 +16,7 @@ interface CoachPanelProps {
     lastMove: string | null;
     playerColor: Color;
     onDrawArrow: (arrow: Arrow) => void;
+    onHighlightSquare: (square: string, color: string) => void;
     onClearArrows: () => void;
 }
 
@@ -25,7 +26,8 @@ export default function CoachPanel({
     lastMove,
     playerColor,
     onDrawArrow,
-    onClearArrows
+    onHighlightSquare,
+    onClearArrows,
 }: CoachPanelProps) {
     const [analysis, setAnalysis] = useState<string>("");
     const [isConnected, setIsConnected] = useState(false);
@@ -38,6 +40,8 @@ export default function CoachPanel({
     const sessionRef = useRef<RealtimeSession | null>(null);
     const lastProcessedMove = useRef<string | null>(null);
     const audioElementRef = useRef<HTMLAudioElement | null>(null);
+    const pendingMoveMessage = useRef<string | null>(null);
+    const isResponseActive = useRef<boolean>(false);
 
     const cleanupSession = useCallback(() => {
         if (sessionRef.current) {
@@ -53,6 +57,11 @@ export default function CoachPanel({
             audioElementRef.current.srcObject = null;
             audioElementRef.current = null;
         }
+        // Reset state tracking refs
+        isResponseActive.current = false;
+        pendingMoveMessage.current = null;
+        lastProcessedMove.current = null;
+        
         setIsConnected(false);
     }, []);
 
@@ -173,7 +182,6 @@ export default function CoachPanel({
                 moveHistory,
                 playerColor,
                 onDrawArrow,
-                onClearArrows
             });
 
             // Instantiate transport with the specific media stream and audio element
@@ -202,6 +210,23 @@ export default function CoachPanel({
             session.transport.on('*', (event: any) => {
                 console.log('[Transport Event]', event);
                 
+                // Track response lifecycle
+                if (event.type === 'response.created') {
+                    isResponseActive.current = true;
+                    console.log('[Response] Started');
+                }
+                if (event.type === 'response.done') {
+                    isResponseActive.current = false;
+                    console.log('[Response] Ended');
+                    
+                    // If there's a pending move message, send it now
+                    if (pendingMoveMessage.current && sessionRef.current) {
+                        console.log('[Sending pending move message]', pendingMoveMessage.current);
+                        sessionRef.current.sendMessage(pendingMoveMessage.current);
+                        pendingMoveMessage.current = null;
+                    }
+                }
+                
                 // Log errors in detail
                 if (event.type === 'response.done' && event.response?.status === 'failed') {
                     console.error('[Response Failed]', event.response.status_details);
@@ -222,10 +247,14 @@ export default function CoachPanel({
                 setTranscript(prev => prev + (event.delta || ""));
             });
 
-            // Clear transcript when turn is done
-            session.transport.on('turn_done', () => {
-                console.log('[Turn done]');
-                setTranscript("");
+            // Clear transcript when a new response starts (to show the new response)
+            session.transport.on('response.audio_transcript.delta', (event: any) => {
+                // First delta of a new response - clear previous transcript
+                if (event.item_index === 0 && event.content_index === 0 && event.delta) {
+                    setTranscript(event.delta);
+                } else {
+                    setTranscript(prev => prev + (event.delta || ""));
+                }
             });
 
             session.on('error', (err: any) => {
@@ -279,9 +308,17 @@ export default function CoachPanel({
         if (isConnected && sessionRef.current && lastMove && lastMove !== lastProcessedMove.current) {
             lastProcessedMove.current = lastMove;
 
-            const updateMsg = `New move played: ${lastMove}. Current FEN: ${fen}. History: ${moveHistory}. Explain the implications of this move and update the analysis UI if there is something important to note.`;
+            const updateMsg = `New move played: ${lastMove}. Current FEN: ${fen}. History: ${moveHistory}. Briefly explain the implications of this move.`;
 
-            sessionRef.current.sendMessage(updateMsg);
+            // If a response is already active, queue this message for later
+            if (isResponseActive.current) {
+                console.log('[Move] Response active, queueing message');
+                pendingMoveMessage.current = updateMsg;
+            } else {
+                // Otherwise send immediately
+                console.log('[Move] Sending message immediately');
+                sessionRef.current.sendMessage(updateMsg);
+            }
         }
     }, [lastMove, fen, moveHistory, isConnected, playerColor]);
 
@@ -370,7 +407,7 @@ export default function CoachPanel({
                     ) : (
                         <div className="prose prose-invert prose-sm max-w-none">
                             {transcript && (
-                                <div className="text-foreground animate-pulse mb-4">
+                                <div className="text-foreground mb-4">
                                     <span className="text-primary mr-2 font-bold">Zuggy:</span>
                                     {transcript}
                                 </div>
@@ -379,11 +416,6 @@ export default function CoachPanel({
                                 <div className="text-foreground whitespace-pre-wrap coaching-message p-3 bg-muted/20 rounded-md border border-border/50">
                                     {analysis}
                                 </div>
-                            )}
-                            {isConnected && !transcript && !analysis && (
-                                <p className="text-primary/70 animate-pulse text-center py-4">
-                                    Coach is listening...
-                                </p>
                             )}
                         </div>
                     )}

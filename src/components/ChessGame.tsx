@@ -15,6 +15,7 @@ export default function ChessGame() {
   const [playerColor, setPlayerColor] = useState<Color>("w");
   const [isEngineThinking, setIsEngineThinking] = useState(false);
   const [arrows, setArrows] = useState<Arrow[]>([]);
+  const [highlightedSquares, setHighlightedSquares] = useState<string[]>([]);
   const engineThinkingRef = useRef(false);
   const engine = useRef<StockfishEngine | null>(null);
 
@@ -159,6 +160,10 @@ export default function ChessGame() {
     setArrows(prev => [...prev, arrow]);
   }, []);
 
+  const handleHighlightSquare = useCallback((square: string, color: string) => {
+    setHighlightedSquares(prev => [...prev, square]);
+  }, []);
+
   const handleClearArrows = useCallback(() => {
     setArrows([]);
   }, []);
@@ -187,6 +192,7 @@ export default function ChessGame() {
                 boardOrientation: playerColor === "w" ? "white" : "black",
                 animationDurationInMs: 200,
                 arrows: arrows,
+                clearArrowsOnPositionChange: true,
                 darkSquareStyle: { backgroundColor: "#7c6f64" },
                 lightSquareStyle: { backgroundColor: "#d5c4a1" },
                 boardStyle: {
@@ -228,6 +234,7 @@ export default function ChessGame() {
           lastMove={game.history().length > 0 ? game.history()[game.history().length - 1] : null}
           playerColor={playerColor}
           onDrawArrow={handleDrawArrow}
+          onHighlightSquare={handleHighlightSquare}
           onClearArrows={handleClearArrows}
         />
       </div>
