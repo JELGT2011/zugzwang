@@ -1,11 +1,6 @@
 import { RealtimeAgent, tool } from '@openai/agents/realtime';
+import type { Arrow } from "react-chessboard";
 import { z } from "zod";
-
-export interface Arrow {
-    startSquare: string;
-    endSquare: string;
-    color: string;
-}
 
 export interface CoachAgentOptions {
     fen: string;

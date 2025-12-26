@@ -5,18 +5,34 @@ import GameControlsPanel from "@/components/GameControlsPanel";
 import NewGamePanel from "@/components/NewGamePanel";
 import { Badge } from "@/components/ui/badge";
 import { useStockfish } from "@/contexts/StockfishContext";
-import { Arrow } from "@/lib/coach-agent";
-import { Chess, Color } from "chess.js";
+import { useBoardController } from "@/hooks";
+import { Chess } from "chess.js";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Chessboard } from "react-chessboard";
+import { Chessboard, type Arrow } from "react-chessboard";
 
 export default function ChessGame() {
-  const [game, setGame] = useState(new Chess());
-  const [playerColor, setPlayerColor] = useState<Color>("w");
-  const [arrows, setArrows] = useState<Arrow[]>([]);
+  // Board controller
+  const {
+    game,
+    playerColor,
+    arrows,
+    hasGameStarted,
+    makeMove,
+    startNewGame,
+    addArrow,
+    clearArrows,
+    getStatus,
+    getMoveHistory,
+    getLastMove,
+    isGameOver,
+    getFen,
+    isPlayerTurn,
+    setGame,
+  } = useBoardController();
+
+  // Local UI state
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(true);
-  const [hasGameStarted, setHasGameStarted] = useState(false);
   const { getBestMove, isThinking: isEngineThinking } = useStockfish();
 
   // Engine move logic
@@ -45,7 +61,7 @@ export default function ChessGame() {
         }
       }, 500);
     }
-  }, [game, playerColor, getBestMove, isEngineThinking]);
+  }, [game, playerColor, getBestMove, isEngineThinking, setGame]);
 
   // Trigger engine move when game or turn changes
   useEffect(() => {
@@ -62,7 +78,7 @@ export default function ChessGame() {
   }): boolean {
     console.debug("onDrop called:", { sourceSquare, targetSquare });
 
-    if (game.isGameOver()) {
+    if (isGameOver()) {
       console.debug("Move rejected: Game is over");
       return false;
     }
@@ -78,48 +94,21 @@ export default function ChessGame() {
     }
 
     // Ensure it's the player's turn
-    const turn = game.turn();
-    const playerTurn = playerColor === "w" ? "w" : "b";
-
-    console.debug("Turn check:", { turn, playerTurn });
-
-    if (turn !== playerTurn) {
+    if (!isPlayerTurn()) {
       console.debug("Move rejected: Not player's turn");
       return false;
     }
 
     // Try to make the move
-    const gameCopy = new Chess(game.fen());
+    const success = makeMove(sourceSquare, targetSquare);
 
-    try {
-      const result = gameCopy.move({
-        from: sourceSquare,
-        to: targetSquare,
-        promotion: "q", // always promote to queen for simplicity
-      });
-
-      if (result === null) {
-        console.debug("Move rejected: Invalid move according to chess.js");
-        return false;
-      }
-
-      console.debug("Move accepted:", result.san);
-      // Update state with the new position
-      setGame(gameCopy);
-      return true;
-    } catch (err) {
-      console.error("Move error:", err);
-      return false;
+    if (success) {
+      console.debug("Move accepted");
+    } else {
+      console.debug("Move rejected: Invalid move according to chess.js");
     }
-  }
 
-  // Start new game
-  function startNewGame(asWhite: boolean) {
-    const newGame = new Chess();
-    setGame(newGame);
-    setPlayerColor(asWhite ? "w" : "b");
-    setArrows([]);
-    setHasGameStarted(true);
+    return success;
   }
 
   // Open new game modal
@@ -127,9 +116,12 @@ export default function ChessGame() {
     setIsNewGameModalOpen(true);
   }
 
-  const handleDrawArrow = useCallback((arrow: Arrow) => {
-    setArrows(prev => [...prev, arrow]);
-  }, []);
+  const handleDrawArrow = useCallback(
+    (arrow: Arrow) => {
+      addArrow(arrow);
+    },
+    [addArrow]
+  );
 
   const handleHighlightSquare = useCallback((square: string) => {
     // TODO: Implement square highlighting
@@ -137,19 +129,8 @@ export default function ChessGame() {
   }, []);
 
   const handleClearArrows = useCallback(() => {
-    setArrows([]);
-  }, []);
-
-  // Get game status
-  function getStatus() {
-    if (game.isCheckmate()) {
-      return game.turn() === "w" ? "Black wins by checkmate!" : "White wins by checkmate!";
-    }
-    if (game.isStalemate()) return "Draw by stalemate";
-    if (game.isDraw()) return "Draw";
-    if (game.isCheck()) return game.turn() === "w" ? "White is in check" : "Black is in check";
-    return game.turn() === "w" ? "White to move" : "Black to move";
-  }
+    clearArrows();
+  }, [clearArrows]);
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 w-full max-w-[1100px] mx-auto p-4">
@@ -159,7 +140,7 @@ export default function ChessGame() {
           <div className="flex-1 aspect-square shadow-2xl rounded-lg overflow-hidden relative">
             <Chessboard
               options={{
-                position: game.fen(),
+                position: getFen(),
                 onPieceDrop: (args) => onDrop(args),
                 boardOrientation: playerColor === "w" ? "white" : "black",
                 animationDurationInMs: 200,
@@ -195,17 +176,17 @@ export default function ChessGame() {
         {hasGameStarted && (
           <GameControlsPanel
             playerColor={playerColor}
-            moveHistory={game.history({ verbose: true })}
-            isGameOver={game.isGameOver()}
+            moveHistory={getMoveHistory()}
+            isGameOver={isGameOver()}
             gameStatus={getStatus()}
             onNewGame={openNewGameModal}
           />
         )}
 
         <CoachPanel
-          fen={game.fen()}
+          fen={getFen()}
           moveHistory={game.history().join(" ")}
-          lastMove={game.history().length > 0 ? game.history()[game.history().length - 1] : null}
+          lastMove={getLastMove()}
           playerColor={playerColor}
           onDrawArrow={handleDrawArrow}
           onHighlightSquare={handleHighlightSquare}

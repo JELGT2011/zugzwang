@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Arrow, createCoachAgent } from "@/lib/coach-agent";
+import { createCoachAgent } from "@/lib/coach-agent";
 import { OpenAIRealtimeWebRTC, RealtimeSession } from '@openai/agents/realtime';
 import { Color } from "chess.js";
 import { Loader2, Mic, MicOff, Settings } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Arrow } from "react-chessboard";
 
 interface CoachPanelProps {
     fen: string;
@@ -176,7 +177,6 @@ export default function CoachPanel({
 
             // Don't try to play yet - wait for WebRTC to set up the stream
             // The click on "Connect" button counts as user interaction for autoplay
-
             const agent = createCoachAgent({
                 fen,
                 moveHistory,
