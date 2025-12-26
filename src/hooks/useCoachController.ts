@@ -2,7 +2,7 @@ import { useStockfish, type MoveAnnotation } from "@/contexts/StockfishContext";
 import { useBoardStore } from "@/stores";
 import { useCoachStore } from "@/stores/coachStore";
 import { OpenAIRealtimeWebRTC, RealtimeAgent, RealtimeSession, tool } from "@openai/agents/realtime";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Arrow } from "react-chessboard";
 import { z } from "zod";
 
@@ -11,11 +11,6 @@ const DrawArrowParameters = z.object({
     from: z.string().describe('The starting square (e.g., "e2").'),
     to: z.string().describe('The ending square (e.g., "e4").'),
     color: z.string().optional().describe('The color of the arrow (e.g., "red", "blue", "green"). Defaults to green.')
-});
-
-const HighlightSquareParameters = z.object({
-    square: z.string().describe('The square to highlight (e.g., "e2").'),
-    color: z.string().optional().describe('The color of the square (e.g., "red", "blue", "green"). Defaults to green.')
 });
 
 const MakeMoveParameters = z.object({
@@ -45,6 +40,11 @@ The human player is playing as ${playerRole} and you are playing as ${engineRole
 Current position (FEN): ${fen}
 Move history: ${moveHistory}
 
+You have tools to interact with the chessboard:
+1. draw_arrow: Use this to point out specific moves, threats, or squares on the board.
+2. make_move: Use this to make moves on the board - REQUIRED when it's your turn as ${engineRole}.
+3. get_top_moves: Use this to analyze positions and find the best moves.
+
 IMPORTANT: You are not just coaching - you are also playing as ${engineRole}. When it's ${engineRole}'s turn to move, you MUST:
 1. Use get_top_moves to analyze the position
 2. Use make_move to execute the best move for ${engineRole}
@@ -55,11 +55,6 @@ When it's the player's turn (${playerRole}), provide brief, encouraging coaching
 
 Be encouraging and insightful. Keep your responses extremely concise as they are spoken.
 
-You have tools to interact with the chessboard:
-1. draw_arrow: Use this to point out specific moves, threats, or squares on the board.
-2. highlight_square: Use this to highlight a specific square on the board.
-3. make_move: Use this to make moves on the board - REQUIRED when it's your turn as ${engineRole}.
-4. get_top_moves: Use this to analyze positions and find the best moves.
 
 Any mention of a square, or a piece, should be accompanied by either an arrow or a highlight.
 `;
@@ -85,17 +80,17 @@ function createCoachTools(
                 return { status: "success" };
             }
         }),
-        tool({
-            name: 'highlight_square',
-            description: 'Highlight a specific square on the board.',
-            parameters: HighlightSquareParameters,
-            strict: true,
-            execute: async ({ square, color }: z.infer<typeof HighlightSquareParameters>) => {
-                const arrow: Arrow = { startSquare: square, endSquare: square, color: color || "green" };
-                addArrow(arrow);
-                return { status: "success" };
-            }
-        }),
+        // tool({
+        //     name: 'highlight_square',
+        //     description: 'Highlight a specific square on the board.',
+        //     parameters: HighlightSquareParameters,
+        //     strict: true,
+        //     execute: async ({ square, color }: z.infer<typeof HighlightSquareParameters>) => {
+        //         const arrow: Arrow = { startSquare: square, endSquare: square, color: color || "green" };
+        //         addArrow(arrow);
+        //         return { status: "success" };
+        //     }
+        // }),
         tool({
             name: 'make_move',
             description: 'Make a move on the chessboard. Use this to demonstrate or suggest moves.',
@@ -137,19 +132,24 @@ function createCoachTools(
 export function useCoachController() {
     // Get coach state
     const connectionState = useCoachStore((state) => state.connectionState);
-    const devices = useCoachStore((state) => state.devices);
-    const selectedDeviceId = useCoachStore((state) => state.selectedDeviceId);
+    const inputDevices = useCoachStore((state) => state.inputDevices);
+    const outputDevices = useCoachStore((state) => state.outputDevices);
+    const selectedInputDeviceId = useCoachStore((state) => state.selectedInputDeviceId);
+    const selectedOutputDeviceId = useCoachStore((state) => state.selectedOutputDeviceId);
     const isTestingAudio = useCoachStore((state) => state.isTestingAudio);
     const transcript = useCoachStore((state) => state.transcript);
-    const analysis = useCoachStore((state) => state.analysis);
+    const transcriptHistory = useCoachStore((state) => state.transcriptHistory);
 
     // Get coach actions
     const setConnectionState = useCoachStore((state) => state.setConnectionState);
-    const setDevices = useCoachStore((state) => state.setDevices);
-    const setSelectedDeviceId = useCoachStore((state) => state.setSelectedDeviceId);
+    const setInputDevices = useCoachStore((state) => state.setInputDevices);
+    const setOutputDevices = useCoachStore((state) => state.setOutputDevices);
+    const setSelectedInputDeviceId = useCoachStore((state) => state.setSelectedInputDeviceId);
+    const setSelectedOutputDeviceId = useCoachStore((state) => state.setSelectedOutputDeviceId);
     const setIsTestingAudio = useCoachStore((state) => state.setIsTestingAudio);
     const setTranscript = useCoachStore((state) => state.setTranscript);
-    const setAnalysis = useCoachStore((state) => state.setAnalysis);
+    const addToHistory = useCoachStore((state) => state.addToHistory);
+    const clearHistory = useCoachStore((state) => state.clearHistory);
     const resetCoachState = useCoachStore((state) => state.reset);
 
     // Derived state
@@ -164,12 +164,17 @@ export function useCoachController() {
     // Get stockfish context for analysis
     const { getTopMoves } = useStockfish();
 
+    // Local state for device selection modal
+    const [showDeviceModal, setShowDeviceModal] = useState(false);
+    const [pendingConnection, setPendingConnection] = useState<{ fen: string; moveHistory: string } | null>(null);
+
     // Session refs (not stored in Zustand as they're not serializable)
     const sessionRef = useRef<RealtimeSession | null>(null);
     const audioElementRef = useRef<HTMLAudioElement | null>(null);
     const lastProcessedMove = useRef<string | null>(null);
     const pendingMoveMessage = useRef<string | null>(null);
     const isResponseActive = useRef<boolean>(false);
+    const currentUserTranscript = useRef<string>("");
 
     const cleanupSession = useCallback(() => {
         if (sessionRef.current) {
@@ -226,20 +231,20 @@ export function useCoachController() {
     const refreshDevices = useCallback(async () => {
         try {
             const allDevices = await navigator.mediaDevices.enumerateDevices();
-            const audioDevices = allDevices.filter((d) => d.kind === "audioinput");
-            setDevices(audioDevices);
+            const audioInputs = allDevices.filter((d) => d.kind === "audioinput");
+            const audioOutputs = allDevices.filter((d) => d.kind === "audiooutput");
 
-            // If no device is selected, use "default" which signals to use system default
-            if (!selectedDeviceId && audioDevices.length > 0) {
-                // Set to "default" to indicate we should use the system's default device
-                // This is better than picking the first device which might not be the default
-                setSelectedDeviceId("default");
-                console.debug("[Audio] Using system default input device");
-            }
+            setInputDevices(audioInputs);
+            setOutputDevices(audioOutputs);
+
+            console.debug("[Audio] Found devices:", {
+                inputs: audioInputs.length,
+                outputs: audioOutputs.length
+            });
         } catch (e) {
             console.error("Error enumerating devices:", e);
         }
-    }, [selectedDeviceId, setDevices, setSelectedDeviceId]);
+    }, [setInputDevices, setOutputDevices]);
 
     const connect = useCallback(
         async (fen: string, moveHistory: string) => {
@@ -259,7 +264,7 @@ export function useCoachController() {
             setConnectionState("connecting");
             try {
                 // Request permissions first if we don't have them to get labels
-                if (devices.some((d) => !d.label)) {
+                if (inputDevices.some((d: MediaDeviceInfo) => !d.label)) {
                     try {
                         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                         stream.getTracks().forEach((t) => t.stop()); // Stop immediately
@@ -282,18 +287,18 @@ export function useCoachController() {
                     throw new Error("No ephemeral key found in response");
                 }
 
-                // Get the media stream for the selected device
+                // Get the media stream for the selected input device
                 // If "default" or empty, use system default by passing true
                 // Otherwise, use the specific device ID
                 const audioConstraints =
-                    selectedDeviceId && selectedDeviceId !== "default"
-                        ? { deviceId: { exact: selectedDeviceId } }
+                    selectedInputDeviceId && selectedInputDeviceId !== "default"
+                        ? { deviceId: { exact: selectedInputDeviceId } }
                         : true;
 
-                console.debug("[Audio] Using device:",
-                    selectedDeviceId === "default" || !selectedDeviceId
+                console.debug("[Audio] Using input device:",
+                    selectedInputDeviceId === "default" || !selectedInputDeviceId
                         ? "system default"
-                        : selectedDeviceId
+                        : selectedInputDeviceId
                 );
 
                 const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -304,6 +309,20 @@ export function useCoachController() {
                 const audioElement = new Audio();
                 audioElement.autoplay = true;
                 audioElementRef.current = audioElement;
+
+                // Set the output device if specified and browser supports it
+                if (selectedOutputDeviceId && selectedOutputDeviceId !== "default") {
+                    if ('setSinkId' in audioElement) {
+                        try {
+                            await (audioElement as any).setSinkId(selectedOutputDeviceId);
+                            console.debug("[Audio] Using output device:", selectedOutputDeviceId);
+                        } catch (err) {
+                            console.warn("[Audio] Failed to set output device:", err);
+                        }
+                    }
+                } else {
+                    console.debug("[Audio] Using system default output device");
+                }
 
                 console.debug("[Audio Element Created]", {
                     autoplay: audioElement.autoplay,
@@ -378,19 +397,50 @@ export function useCoachController() {
                     console.debug("[Audio received]", event.data?.byteLength || 0, "bytes");
                 });
 
-                // Listen for audio transcript deltas
-                session.transport.on("audio_transcript_delta", (event: any) => {
-                    console.debug("[Transcript delta]", event.delta);
-                    setTranscript((prev) => prev + (event.delta || ""));
+                // Listen for user's audio transcript deltas
+                session.transport.on("conversation.item.input_audio_transcription.delta", (event: any) => {
+                    console.debug("[User transcript delta]", event.delta);
+                    if (event.delta) {
+                        currentUserTranscript.current += event.delta;
+                    }
                 });
 
-                // Clear transcript when a new response starts (to show the new response)
-                session.transport.on("response.audio_transcript.delta", (event: any) => {
-                    // First delta of a new response - clear previous transcript
-                    if (event.item_index === 0 && event.content_index === 0 && event.delta) {
-                        setTranscript(event.delta);
-                    } else {
-                        setTranscript((prev) => prev + (event.delta || ""));
+                // Listen for user's audio transcript completion
+                session.transport.on("conversation.item.input_audio_transcription.completed", (event: any) => {
+                    console.debug("[User transcript completed]", event.transcript || currentUserTranscript.current);
+                    const userText = event.transcript || currentUserTranscript.current;
+                    if (userText?.trim()) {
+                        addToHistory({
+                            role: "user",
+                            content: userText,
+                            timestamp: Date.now(),
+                        });
+                    }
+                    // Clear the building transcript
+                    currentUserTranscript.current = "";
+                });
+
+                // Listen for assistant's audio transcript deltas
+                session.transport.on("response.output_audio_transcript.delta", (event: any) => {
+                    console.debug("[Assistant transcript delta]", event.delta);
+                    if (event.delta) {
+                        setTranscript((prev) => prev + event.delta);
+                    }
+                });
+
+                // Listen for assistant's audio transcript completion
+                session.transport.on("response.output_audio_transcript.done", (event: any) => {
+                    console.debug("[Assistant transcript done]", event.transcript);
+                    // Save the completed transcript to history
+                    const assistantText = event.transcript || useCoachStore.getState().transcript;
+                    if (assistantText?.trim()) {
+                        addToHistory({
+                            role: "assistant",
+                            content: assistantText,
+                            timestamp: Date.now(),
+                        });
+                        // Clear the current transcript for the next message
+                        setTranscript("");
                     }
                 });
 
@@ -433,7 +483,6 @@ export function useCoachController() {
                 }
             } catch (error) {
                 console.error("Connection error:", error);
-                setAnalysis("Failed to connect to the voice coach. Please check microphone permissions.");
                 cleanupSession();
             } finally {
                 if (connectionState === "connecting") {
@@ -443,8 +492,9 @@ export function useCoachController() {
         },
         [
             isConnected,
-            devices,
-            selectedDeviceId,
+            inputDevices,
+            selectedInputDeviceId,
+            selectedOutputDeviceId,
             playerColor,
             addArrow,
             makeMove,
@@ -452,7 +502,7 @@ export function useCoachController() {
             connectionState,
             setConnectionState,
             setTranscript,
-            setAnalysis,
+            addToHistory,
             cleanupSession,
             refreshDevices,
         ]
@@ -485,31 +535,67 @@ export function useCoachController() {
 
     // Cleanup on unmount
     useEffect(() => {
-        return () => {
-            cleanupSession();
-        };
+        return cleanupSession;
     }, [cleanupSession]);
+
+    // Wrapper to initiate connection with device selection
+    const initiateConnection = useCallback(async (fen: string, moveHistory: string) => {
+        // Refresh devices first
+        await refreshDevices();
+
+        // Get fresh device lists from store after refresh
+        const currentInputs = useCoachStore.getState().inputDevices;
+        const currentOutputs = useCoachStore.getState().outputDevices;
+
+        // Check if we have multiple devices
+        const hasMultipleInputs = currentInputs.length > 1;
+        const hasMultipleOutputs = currentOutputs.length > 1;
+
+        if (hasMultipleInputs || hasMultipleOutputs) {
+            // Show device selection modal
+            setPendingConnection({ fen, moveHistory });
+            setShowDeviceModal(true);
+        } else {
+            // No device choice needed, connect immediately
+            await connect(fen, moveHistory);
+        }
+    }, [refreshDevices, connect]);
+
+    const confirmDeviceSelection = useCallback(async () => {
+        if (pendingConnection) {
+            await connect(pendingConnection.fen, pendingConnection.moveHistory);
+            setPendingConnection(null);
+        }
+    }, [connect, pendingConnection]);
 
     return {
         // State
         connectionState,
         isConnected,
         isConnecting,
-        devices,
-        selectedDeviceId,
+        inputDevices,
+        outputDevices,
+        selectedInputDeviceId,
+        selectedOutputDeviceId,
         isTestingAudio,
         transcript,
-        analysis,
+        transcriptHistory,
+        showDeviceModal,
 
         // Actions
+        initiateConnection,
         connect,
+        confirmDeviceSelection,
         cleanupSession,
         testAudio,
         refreshDevices,
-        setSelectedDeviceId,
+        setSelectedInputDeviceId,
+        setSelectedOutputDeviceId,
+        setShowDeviceModal,
         sendMessage,
         updateLastProcessedMove,
         getLastProcessedMove,
+        clearHistory,
         resetCoachState,
     };
 }

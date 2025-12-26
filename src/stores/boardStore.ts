@@ -119,4 +119,3 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
     isGameOver: () => get().game.isGameOver(),
 }));
-

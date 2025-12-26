@@ -22,7 +22,7 @@ export default function NewGamePanel({
     onStartGame,
 }: NewGamePanelProps) {
     const { getFen, getMoveHistory } = useBoardController();
-    const { connect } = useCoachController();
+    const { initiateConnection } = useCoachController();
 
     const handleColorSelect = async (asWhite: boolean) => {
         onStartGame(asWhite);
@@ -32,7 +32,7 @@ export default function NewGamePanel({
         setTimeout(async () => {
             const fen = getFen();
             const moveHistory = getMoveHistory().map(m => m.san).join(" ");
-            await connect(fen, moveHistory);
+            await initiateConnection(fen, moveHistory);
         }, 100);
     };
 
