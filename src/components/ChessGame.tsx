@@ -1,7 +1,8 @@
 "use client";
 
 import CoachPanel from "@/components/CoachPanel";
-import NewGameCard from "@/components/NewGameCard";
+import GameControlsPanel from "@/components/GameControlsPanel";
+import NewGamePanel from "@/components/NewGamePanel";
 import { Badge } from "@/components/ui/badge";
 import { Arrow } from "@/lib/coach-agent";
 import { StockfishEngine } from "@/lib/stockfish";
@@ -15,7 +16,8 @@ export default function ChessGame() {
   const [playerColor, setPlayerColor] = useState<Color>("w");
   const [isEngineThinking, setIsEngineThinking] = useState(false);
   const [arrows, setArrows] = useState<Arrow[]>([]);
-  const [highlightedSquares, setHighlightedSquares] = useState<string[]>([]);
+  const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(true);
+  const [hasGameStarted, setHasGameStarted] = useState(false);
   const engineThinkingRef = useRef(false);
   const engine = useRef<StockfishEngine | null>(null);
 
@@ -148,6 +150,7 @@ export default function ChessGame() {
     setPlayerColor(asWhite ? "w" : "b");
     setIsEngineThinking(false);
     setArrows([]);
+    setHasGameStarted(true);
 
     // Reset engine
     if (engine.current) {
@@ -156,12 +159,18 @@ export default function ChessGame() {
     }
   }
 
+  // Open new game modal
+  function openNewGameModal() {
+    setIsNewGameModalOpen(true);
+  }
+
   const handleDrawArrow = useCallback((arrow: Arrow) => {
     setArrows(prev => [...prev, arrow]);
   }, []);
 
-  const handleHighlightSquare = useCallback((square: string, color: string) => {
-    setHighlightedSquares(prev => [...prev, square]);
+  const handleHighlightSquare = useCallback((square: string) => {
+    // TODO: Implement square highlighting
+    console.log("Highlight square:", square);
   }, []);
 
   const handleClearArrows = useCallback(() => {
@@ -220,13 +229,15 @@ export default function ChessGame() {
 
       {/* Side Panel */}
       <div className="flex flex-col gap-4 lg:w-[280px] shrink-0">
-        <NewGameCard
-          playerColor={playerColor}
-          moveHistory={game.history({ verbose: true })}
-          isGameOver={game.isGameOver()}
-          gameStatus={getStatus()}
-          onNewGame={startNewGame}
-        />
+        {hasGameStarted && (
+          <GameControlsPanel
+            playerColor={playerColor}
+            moveHistory={game.history({ verbose: true })}
+            isGameOver={game.isGameOver()}
+            gameStatus={getStatus()}
+            onNewGame={openNewGameModal}
+          />
+        )}
 
         <CoachPanel
           fen={game.fen()}
@@ -238,6 +249,13 @@ export default function ChessGame() {
           onClearArrows={handleClearArrows}
         />
       </div>
+
+      {/* New Game Modal */}
+      <NewGamePanel
+        isOpen={isNewGameModalOpen}
+        onClose={() => setIsNewGameModalOpen(false)}
+        onStartGame={startNewGame}
+      />
     </div>
   );
 }
