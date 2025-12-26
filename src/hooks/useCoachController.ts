@@ -38,6 +38,12 @@ You are a Grandmaster Chess Coach named 'Zuggy'.
 Your goal is to explain the current state of the game and moves in a clear, engaging, and educational way.
 The human player is playing as ${playerRole} and you are playing as ${engineRole}.
 
+STOCKFISH GROUNDING:
+- You are a mouthpiece for Stockfish. 
+- With every player move, you will receive a detailed Stockfish analysis including top moves, evaluations, and threats.
+- ALWAYS prioritize this provided analysis over your own chess knowledge. If Stockfish says a move is a blunder or identifies a threat, that is the absolute truth.
+- Use the evaluation numbers (e.g., +1.5, -0.8) to gauge how well the player is doing.
+
 Board:
 ${boardAscii}
 
@@ -52,7 +58,14 @@ IMPORTANT: You are not just coaching - you are also playing as ${engineRole}. Wh
 1. Use get_top_moves to analyze the position
 2. Use make_move to execute the best move for ${engineRole}
 3. Briefly explain your move choice (1-2 sentences max)
-4. Use draw_arrow to highlight the move you made or key tactical ideas
+4. Use draw_arrow to highlight the tactical reasoning behind the move (e.g., an attack, a defense, or a key square). DO NOT simply highlight the move itself (the board already does this).
+
+ARROW USAGE & TACTICAL GROUNDING:
+- Use draw_arrow to explain *why* a move is good or bad based on Stockfish analysis.
+- If Stockfish identifies a threat, draw an arrow from the threatening piece to the target.
+- If a move is made to attack a piece, highlight that attack.
+- If a move defends a square, highlight the defense.
+- Focus on the "reasoning" provided in the Stockfish threats or top lines.
 
 CONCISENESS IS CRITICAL:
 - Your responses are spoken aloud. Keep them extremely brief and focused.
@@ -237,11 +250,20 @@ export function useCoachController() {
     const refreshDevices = useCallback(async () => {
         try {
             const allDevices = await navigator.mediaDevices.enumerateDevices();
-            const audioInputs = allDevices.filter((d) => d.kind === "audioinput");
-            const audioOutputs = allDevices.filter((d) => d.kind === "audiooutput");
+            const audioInputs = allDevices.filter((d) => d.kind === "audioinput" && d.deviceId);
+            const audioOutputs = allDevices.filter((d) => d.kind === "audiooutput" && d.deviceId);
 
             setInputDevices(audioInputs);
             setOutputDevices(audioOutputs);
+
+            // Auto-select first device if none selected or if "default" was previously selected
+            const currentStore = useCoachStore.getState();
+            if ((!currentStore.selectedInputDeviceId || currentStore.selectedInputDeviceId === "default") && audioInputs.length > 0) {
+                setSelectedInputDeviceId(audioInputs[0].deviceId);
+            }
+            if ((!currentStore.selectedOutputDeviceId || currentStore.selectedOutputDeviceId === "default") && audioOutputs.length > 0) {
+                setSelectedOutputDeviceId(audioOutputs[0].deviceId);
+            }
 
             console.debug("[Audio] Found devices:", {
                 inputs: audioInputs.length,
@@ -250,7 +272,7 @@ export function useCoachController() {
         } catch (e) {
             console.error("Error enumerating devices:", e);
         }
-    }, [setInputDevices, setOutputDevices]);
+    }, [setInputDevices, setOutputDevices, setSelectedInputDeviceId, setSelectedOutputDeviceId]);
 
     const connect = useCallback(
         async (fen: string, moveHistory: string, boardAscii: string) => {
@@ -294,17 +316,14 @@ export function useCoachController() {
                 }
 
                 // Get the media stream for the selected input device
-                // If "default" or empty, use system default by passing true
-                // Otherwise, use the specific device ID
+                // Use the specific device ID
                 const audioConstraints =
-                    selectedInputDeviceId && selectedInputDeviceId !== "default"
+                    selectedInputDeviceId
                         ? { deviceId: { exact: selectedInputDeviceId } }
                         : true;
 
                 console.debug("[Audio] Using input device:",
-                    selectedInputDeviceId === "default" || !selectedInputDeviceId
-                        ? "system default"
-                        : selectedInputDeviceId
+                    selectedInputDeviceId || "system default"
                 );
 
                 const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -317,7 +336,7 @@ export function useCoachController() {
                 audioElementRef.current = audioElement;
 
                 // Set the output device if specified and browser supports it
-                if (selectedOutputDeviceId && selectedOutputDeviceId !== "default") {
+                if (selectedOutputDeviceId) {
                     if ('setSinkId' in audioElement) {
                         try {
                             await (audioElement as any).setSinkId(selectedOutputDeviceId);
@@ -327,7 +346,7 @@ export function useCoachController() {
                         }
                     }
                 } else {
-                    console.debug("[Audio] Using system default output device");
+                    console.debug("[Audio] Using default output device");
                 }
 
                 console.debug("[Audio Element Created]", {
@@ -375,11 +394,9 @@ export function useCoachController() {
                     // Track response lifecycle
                     if (event.type === "response.created") {
                         isResponseActive.current = true;
-                        console.debug("[Response] Started");
                     }
                     if (event.type === "response.done") {
                         isResponseActive.current = false;
-                        console.debug("[Response] Ended");
 
                         // If there's a pending move message, send it now
                         if (pendingMoveMessage.current && sessionRef.current) {
@@ -405,7 +422,6 @@ export function useCoachController() {
 
                 // Listen for user's audio transcript deltas
                 session.transport.on("conversation.item.input_audio_transcription.delta", (event: any) => {
-                    console.debug("[User transcript delta]", event.delta);
                     if (event.delta) {
                         currentUserTranscript.current += event.delta;
                     }
@@ -428,7 +444,6 @@ export function useCoachController() {
 
                 // Listen for assistant's audio transcript deltas
                 session.transport.on("response.output_audio_transcript.delta", (event: any) => {
-                    console.debug("[Assistant transcript delta]", event.delta);
                     if (event.delta) {
                         setTranscript((prev) => prev + event.delta);
                     }
@@ -436,7 +451,6 @@ export function useCoachController() {
 
                 // Listen for assistant's audio transcript completion
                 session.transport.on("response.output_audio_transcript.done", (event: any) => {
-                    console.debug("[Assistant transcript done]", event.transcript);
                     // Save the completed transcript to history
                     const assistantText = event.transcript || useCoachStore.getState().transcript;
                     if (assistantText?.trim()) {
@@ -505,6 +519,7 @@ export function useCoachController() {
             addArrow,
             makeMove,
             getTopMoves,
+            getFen,
             connectionState,
             setConnectionState,
             setTranscript,
@@ -544,27 +559,39 @@ export function useCoachController() {
     useEffect(() => {
         if (!isConnected) return;
 
-        if (lastMove && lastMove !== lastProcessedMove.current) {
-            lastProcessedMove.current = lastMove;
+        const handleMoveUpdate = async () => {
+            if (lastMove && lastMove !== lastProcessedMove.current) {
+                lastProcessedMove.current = lastMove;
 
-            // Check whose turn it is now
-            // If it's NOT the player's turn, that means the player just moved (should notify agent)
-            // If it IS the player's turn, that means the agent just moved (don't notify - agent knows its own move)
-            const isPlayersTurn = currentTurn === playerColor;
+                // Check whose turn it is now
+                // If it's NOT the player's turn, that means the player just moved (should notify agent)
+                // If it IS the player's turn, that means the agent just moved (don't notify - agent knows its own move)
+                const isPlayersTurn = currentTurn === playerColor;
 
-            if (!isPlayersTurn) {
-                // Player just moved, notify the agent
-                const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
-                const boardAscii = game.ascii();
-                const updateMsg = `New move played: ${lastMove}. Board:\n${boardAscii}\nHistory: ${moveHistoryStr}. Briefly explain the implications of this move.`;
+                if (!isPlayersTurn) {
+                    // Player just moved, notify the agent with Stockfish analysis
+                    const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
+                    const boardAscii = game.ascii();
+                    
+                    // Get Stockfish analysis for the new position
+                    // We analyze from the agent's perspective (it's now the agent's turn to move or react)
+                    const analysis = await getTopMoves(fen, 3, 15);
+                    const analysisStr = analysis.map((m, i) => 
+                        `${i+1}. ${m.san} (Eval: ${m.evaluation}${m.mate ? `, Mate in ${m.mate}` : ''})${m.threats ? ` - Threats: ${m.threats}` : ''}`
+                    ).join('\n');
 
-                console.debug("[sendMessage] Player moved, sending update to agent", updateMsg);
-                sendMessage(updateMsg);
-            } else {
-                console.debug("[sendMessage] Agent made its own move, skipping notification");
+                    const updateMsg = `Player played: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nStockfish Analysis of current position:\n${analysisStr}\n\nUsing this analysis, briefly explain the implications of the player's move and the current state of the game.`;
+
+                    console.debug("[sendMessage] Player moved, sending update to agent with analysis", updateMsg);
+                    sendMessage(updateMsg);
+                } else {
+                    console.debug("[sendMessage] Agent made its own move, skipping notification");
+                }
             }
-        }
-    }, [isConnected, lastMove, fen, moveHistory, game, currentTurn, playerColor, sendMessage]);
+        };
+
+        handleMoveUpdate();
+    }, [isConnected, lastMove, fen, moveHistory, game, currentTurn, playerColor, sendMessage, getTopMoves]);
 
     // Cleanup on unmount
     useEffect(() => {

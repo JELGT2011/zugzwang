@@ -56,15 +56,6 @@ export default function AudioDeviceModal({
                             Microphone (Input)
                         </div>
                         <div className="space-y-2">
-                            <button
-                                onClick={() => onInputDeviceChange("default")}
-                                className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${selectedInputDeviceId === "default"
-                                        ? "border-primary bg-primary/10 text-foreground"
-                                        : "border-border hover:bg-muted"
-                                    }`}
-                            >
-                                <div className="font-medium">System Default</div>
-                            </button>
                             {inputDevices.map((device) => (
                                 <button
                                     key={device.deviceId}
@@ -89,15 +80,6 @@ export default function AudioDeviceModal({
                             Speaker/Headphones (Output)
                         </div>
                         <div className="space-y-2">
-                            <button
-                                onClick={() => onOutputDeviceChange("default")}
-                                className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${selectedOutputDeviceId === "default"
-                                        ? "border-primary bg-primary/10 text-foreground"
-                                        : "border-border hover:bg-muted"
-                                    }`}
-                            >
-                                <div className="font-medium">System Default</div>
-                            </button>
                             {outputDevices.map((device) => (
                                 <button
                                     key={device.deviceId}
