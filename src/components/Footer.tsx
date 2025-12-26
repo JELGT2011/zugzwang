@@ -23,15 +23,15 @@ export function Footer() {
             <h3 className="text-sm font-semibold text-foreground">Features</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <Link 
-                  href="/play"
+                <Link
+                  href="/"
                   className="hover:text-primary transition-colors"
                 >
                   Play Chess
                 </Link>
               </li>
               <li>
-                <Link 
+                <Link
                   href="/puzzles"
                   className="hover:text-primary transition-colors"
                 >
@@ -39,7 +39,7 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link 
+                <Link
                   href="/openings"
                   className="hover:text-primary transition-colors"
                 >
@@ -54,9 +54,9 @@ export function Footer() {
             <h3 className="text-sm font-semibold text-foreground">Resources</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <a 
-                  href="https://www.chess.com/learn" 
-                  target="_blank" 
+                <a
+                  href="https://www.chess.com/learn"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-primary transition-colors"
                 >
@@ -64,9 +64,9 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a 
-                  href="https://stockfishchess.org/" 
-                  target="_blank" 
+                <a
+                  href="https://stockfishchess.org/"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-primary transition-colors"
                 >
@@ -74,9 +74,9 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a 
-                  href="https://lichess.org" 
-                  target="_blank" 
+                <a
+                  href="https://lichess.org"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-primary transition-colors"
                 >
