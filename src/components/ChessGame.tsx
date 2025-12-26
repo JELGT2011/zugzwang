@@ -8,7 +8,7 @@ import { useStockfish } from "@/contexts/StockfishContext";
 import { Arrow } from "@/lib/coach-agent";
 import { Chess, Color } from "chess.js";
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Chessboard } from "react-chessboard";
 
 export default function ChessGame() {
@@ -18,12 +18,6 @@ export default function ChessGame() {
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(true);
   const [hasGameStarted, setHasGameStarted] = useState(false);
   const { getBestMove, isThinking: isEngineThinking } = useStockfish();
-  const engineThinkingRef = useRef(false);
-
-  // Synchronize ref with state for the engine thinking status
-  useEffect(() => {
-    engineThinkingRef.current = isEngineThinking;
-  }, [isEngineThinking]);
 
   // Engine move logic
   const makeEngineMove = useCallback(async () => {
@@ -32,7 +26,7 @@ export default function ChessGame() {
     const turn = game.turn(); // 'w' or 'b'
     const engineTurn = playerColor === "w" ? "b" : "w";
 
-    if (turn === engineTurn && !engineThinkingRef.current) {
+    if (turn === engineTurn && !isEngineThinking) {
       console.debug("Engine turn detected. Thinking...");
 
       // Small delay for natural feel
@@ -51,7 +45,7 @@ export default function ChessGame() {
         }
       }, 500);
     }
-  }, [game, playerColor, getBestMove]);
+  }, [game, playerColor, getBestMove, isEngineThinking]);
 
   // Trigger engine move when game or turn changes
   useEffect(() => {
@@ -73,7 +67,7 @@ export default function ChessGame() {
       return false;
     }
 
-    if (engineThinkingRef.current) {
+    if (isEngineThinking) {
       console.debug("Move rejected: Engine is thinking");
       return false;
     }
