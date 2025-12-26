@@ -20,7 +20,7 @@ const MakeMoveParameters = z.object({
 });
 
 const GetTopMovesParameters = z.object({
-    fen: z.string().describe('The FEN position to analyze.'),
+    fen: z.string().optional().describe('The FEN position to analyze. Defaults to the current board position if not provided.'),
     numMoves: z.number().optional().describe('Number of top moves to return (default: 3).'),
     depth: z.number().optional().describe('Analysis depth (default: 15).')
 });
@@ -31,13 +31,16 @@ const GetTopMovesParameters = z.object({
 const createCoachInstructions = (
     playerRole: string,
     engineRole: string,
-    fen: string,
-    moveHistory: string
+    moveHistory: string,
+    boardAscii: string
 ) => `
 You are a Grandmaster Chess Coach named 'Zuggy'. 
 Your goal is to explain the current state of the game and moves in a clear, engaging, and educational way.
 The human player is playing as ${playerRole} and you are playing as ${engineRole}.
-Current position (FEN): ${fen}
+
+Board:
+${boardAscii}
+
 Move history: ${moveHistory}
 
 You have tools to interact with the chessboard:
@@ -51,9 +54,11 @@ IMPORTANT: You are not just coaching - you are also playing as ${engineRole}. Wh
 3. Briefly explain your move choice (1-2 sentences max)
 4. Use draw_arrow to highlight the move you made or key tactical ideas
 
-When it's the player's turn (${playerRole}), provide brief, encouraging coaching about the position.
-Be encouraging and insightful. Keep your responses extremely concise as they are spoken.
-Any mention of a square, or a piece, should be accompanied by either an arrow or a highlight.
+CONCISENESS IS CRITICAL:
+- Your responses are spoken aloud. Keep them extremely brief and focused.
+- During the opening (first 10-15 moves), do not provide deep analysis unless specifically asked or if something very unusual happens. Just name the opening or make your move quickly.
+- Avoid repeating information. If the user has questions, they will ask.
+- Any mention of a square or piece should be accompanied by an arrow (draw_arrow).
 `;
 
 /**
@@ -62,7 +67,8 @@ Any mention of a square, or a piece, should be accompanied by either an arrow or
 function createCoachTools(
     addArrow: (arrow: Arrow) => void,
     makeMove: (from: string, to: string, promotion?: string) => boolean,
-    getTopMoves: (fen: string, numMoves?: number, depth?: number) => Promise<MoveAnnotation[]>
+    getTopMoves: (fen: string, numMoves?: number, depth?: number) => Promise<MoveAnnotation[]>,
+    getCurrentFen: () => string
 ) {
     return [
         tool({
@@ -106,7 +112,8 @@ function createCoachTools(
             parameters: GetTopMovesParameters,
             strict: true,
             execute: async ({ fen, numMoves = 3, depth = 15 }: z.infer<typeof GetTopMovesParameters>) => {
-                const moves = await getTopMoves(fen, numMoves, depth);
+                const targetFen = fen || getCurrentFen();
+                const moves = await getTopMoves(targetFen, numMoves, depth);
                 return {
                     status: "success",
                     moves: moves.map(m => ({
@@ -165,7 +172,7 @@ export function useCoachController() {
 
     // Local state for device selection modal
     const [showDeviceModal, setShowDeviceModal] = useState(false);
-    const [pendingConnection, setPendingConnection] = useState<{ fen: string; moveHistory: string } | null>(null);
+    const [pendingConnection, setPendingConnection] = useState<{ fen: string; moveHistory: string; boardAscii: string } | null>(null);
 
     // Session refs (not stored in Zustand as they're not serializable)
     const sessionRef = useRef<RealtimeSession | null>(null);
@@ -246,7 +253,7 @@ export function useCoachController() {
     }, [setInputDevices, setOutputDevices]);
 
     const connect = useCallback(
-        async (fen: string, moveHistory: string) => {
+        async (fen: string, moveHistory: string, boardAscii: string) => {
             console.debug("[Connect Coach] Starting...", { isConnected });
 
             // If already connected, just disconnect
@@ -335,8 +342,8 @@ export function useCoachController() {
 
                 const agent = new RealtimeAgent({
                     name: 'Zuggy',
-                    instructions: createCoachInstructions(playerRole, engineRole, fen, moveHistory),
-                    tools: createCoachTools(addArrow, makeMove, getTopMoves)
+                    instructions: createCoachInstructions(playerRole, engineRole, moveHistory, boardAscii),
+                    tools: createCoachTools(addArrow, makeMove, getTopMoves, getFen)
                 });
 
                 // Instantiate transport with the specific media stream and audio element
@@ -548,7 +555,8 @@ export function useCoachController() {
             if (!isPlayersTurn) {
                 // Player just moved, notify the agent
                 const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
-                const updateMsg = `New move played: ${lastMove}. Current FEN: ${fen}. History: ${moveHistoryStr}. Briefly explain the implications of this move.`;
+                const boardAscii = game.ascii();
+                const updateMsg = `New move played: ${lastMove}. Board:\n${boardAscii}\nHistory: ${moveHistoryStr}. Briefly explain the implications of this move.`;
 
                 console.debug("[sendMessage] Player moved, sending update to agent", updateMsg);
                 sendMessage(updateMsg);
@@ -556,7 +564,7 @@ export function useCoachController() {
                 console.debug("[sendMessage] Agent made its own move, skipping notification");
             }
         }
-    }, [isConnected, lastMove, fen, moveHistory, currentTurn, playerColor, sendMessage]);
+    }, [isConnected, lastMove, fen, moveHistory, game, currentTurn, playerColor, sendMessage]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -567,6 +575,7 @@ export function useCoachController() {
     const initiateConnection = useCallback(async () => {
         // Get current board state
         const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
+        const boardAscii = game.ascii();
 
         // Refresh devices first
         await refreshDevices();
@@ -581,17 +590,17 @@ export function useCoachController() {
 
         if (hasMultipleInputs || hasMultipleOutputs) {
             // Show device selection modal
-            setPendingConnection({ fen, moveHistory: moveHistoryStr });
+            setPendingConnection({ fen, moveHistory: moveHistoryStr, boardAscii });
             setShowDeviceModal(true);
         } else {
             // No device choice needed, connect immediately
-            await connect(fen, moveHistoryStr);
+            await connect(fen, moveHistoryStr, boardAscii);
         }
-    }, [fen, moveHistory, refreshDevices, connect]);
+    }, [fen, moveHistory, game, refreshDevices, connect]);
 
     const confirmDeviceSelection = useCallback(async () => {
         if (pendingConnection) {
-            await connect(pendingConnection.fen, pendingConnection.moveHistory);
+            await connect(pendingConnection.fen, pendingConnection.moveHistory, pendingConnection.boardAscii);
             setPendingConnection(null);
         }
     }, [connect, pendingConnection]);

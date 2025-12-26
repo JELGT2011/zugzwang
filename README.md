@@ -4,8 +4,6 @@
 - [ ] improve agent robustness and accuracy
     - [ ] give agent more stockfish access, and constrain recommendations by stockfish's evaluation
     - [ ] ensure agent game state is consistent with board representation
-    - [ ] update prompt to be more concise (especially in openings)
-    - [ ] provide agent with text representation (instead of fen)
     - [ ] consolidate message pattern
 - [ ] load game from fen (or pgn)
 - [ ] improve QoL
