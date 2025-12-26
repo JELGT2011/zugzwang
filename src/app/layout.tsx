@@ -1,5 +1,6 @@
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
+import { StockfishProvider } from "@/contexts/StockfishContext";
 import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
@@ -32,9 +33,11 @@ export default function RootLayout({
         className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased flex flex-col min-h-screen`}
       >
         <Navbar />
-        <main className="flex-1">
-          {children}
-        </main>
+        <StockfishProvider>
+          <main className="flex-1">
+            {children}
+          </main>
+        </StockfishProvider>
         <Footer />
       </body>
     </html>

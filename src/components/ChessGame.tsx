@@ -4,8 +4,8 @@ import CoachPanel from "@/components/CoachPanel";
 import GameControlsPanel from "@/components/GameControlsPanel";
 import NewGamePanel from "@/components/NewGamePanel";
 import { Badge } from "@/components/ui/badge";
+import { useStockfish } from "@/contexts/StockfishContext";
 import { Arrow } from "@/lib/coach-agent";
-import { StockfishEngine } from "@/lib/stockfish";
 import { Chess, Color } from "chess.js";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -14,68 +14,44 @@ import { Chessboard } from "react-chessboard";
 export default function ChessGame() {
   const [game, setGame] = useState(new Chess());
   const [playerColor, setPlayerColor] = useState<Color>("w");
-  const [isEngineThinking, setIsEngineThinking] = useState(false);
   const [arrows, setArrows] = useState<Arrow[]>([]);
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(true);
   const [hasGameStarted, setHasGameStarted] = useState(false);
+  const { getBestMove, isThinking: isEngineThinking } = useStockfish();
   const engineThinkingRef = useRef(false);
-  const engine = useRef<StockfishEngine | null>(null);
 
   // Synchronize ref with state for the engine thinking status
   useEffect(() => {
     engineThinkingRef.current = isEngineThinking;
   }, [isEngineThinking]);
 
-  // Initialize engine
-  useEffect(() => {
-    console.debug("Initializing Stockfish engine...");
-    engine.current = new StockfishEngine();
-    engine.current.send("uci");
-    engine.current.send("isready");
-
-    return () => {
-      console.debug("Terminating Stockfish engine...");
-      engine.current?.quit();
-    };
-  }, []);
-
   // Engine move logic
-  const makeEngineMove = useCallback(() => {
-    if (game.isGameOver() || !engine.current) return;
+  const makeEngineMove = useCallback(async () => {
+    if (game.isGameOver()) return;
 
     const turn = game.turn(); // 'w' or 'b'
     const engineTurn = playerColor === "w" ? "b" : "w";
 
     if (turn === engineTurn && !engineThinkingRef.current) {
       console.debug("Engine turn detected. Thinking...");
-      engineThinkingRef.current = true;
-
-      // Defer state update to avoid linter warning and cascading renders
-      setTimeout(() => setIsEngineThinking(true), 0);
 
       // Small delay for natural feel
-      setTimeout(() => {
-        if (!engine.current) return;
-        engine.current.send(`position fen ${game.fen()}`);
-        engine.current.send("go depth 12", (message) => {
-          const bestMoveMatch = message.match(/^bestmove\s([a-h][1-8][a-h][1-8][qrbn]?)/);
-          if (bestMoveMatch) {
-            const bestMove = bestMoveMatch[1];
-            console.debug("Engine suggests move:", bestMove);
-            const gameCopy = new Chess(game.fen());
-            try {
-              gameCopy.move(bestMove);
-              setGame(gameCopy);
-            } catch (e) {
-              console.error("Engine move error:", e);
-            }
+      setTimeout(async () => {
+        const bestMove = await getBestMove(game.fen(), 12);
+
+        if (bestMove) {
+          console.debug("Engine suggests move:", bestMove);
+          const gameCopy = new Chess(game.fen());
+          try {
+            gameCopy.move(bestMove);
+            setGame(gameCopy);
+          } catch (e) {
+            console.error("Engine move error:", e);
           }
-          engineThinkingRef.current = false;
-          setIsEngineThinking(false);
-        });
+        }
       }, 500);
     }
-  }, [game, playerColor]);
+  }, [game, playerColor, getBestMove]);
 
   // Trigger engine move when game or turn changes
   useEffect(() => {
@@ -148,15 +124,8 @@ export default function ChessGame() {
     const newGame = new Chess();
     setGame(newGame);
     setPlayerColor(asWhite ? "w" : "b");
-    setIsEngineThinking(false);
     setArrows([]);
     setHasGameStarted(true);
-
-    // Reset engine
-    if (engine.current) {
-      engine.current.send("ucinewgame");
-      engine.current.send("isready");
-    }
   }
 
   // Open new game modal
