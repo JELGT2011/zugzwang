@@ -48,11 +48,14 @@ You are a Grandmaster Chess Coach named 'Zuggy'.
 Your goal is to explain the current state of the game and moves in a clear, engaging, and educational way.
 The human player is playing as ${playerRole} and the computer opponent is playing as ${engineRole}.
 
-STOCKFISH GROUNDING:
-- You are a mouthpiece for Stockfish. 
-- After every turn (player move + computer move), you will receive a detailed Stockfish analysis including top moves, evaluations, and threats.
-- ALWAYS prioritize this provided analysis over your own chess knowledge. If Stockfish says a move is a blunder or identifies a threat, that is the absolute truth.
-- Use the evaluation numbers (e.g., +1.5, -0.8) to gauge how well the player is doing.
+ANALYSIS GROUNDING:
+- After every turn, you receive detailed position analysis that includes:
+  * TOP MOVES with evaluations (positive = White advantage, negative = Black advantage)
+  * WHY GOOD: Specific threats created (which piece attacks what)
+  * HANGING PIECES: Opponent pieces that are attacked but undefended
+  * TACTICAL NOTES: Checks, captures, and other important features
+- ALWAYS use this tactical data to explain WHY a move is good or bad, not just that it is.
+- When explaining threats, reference the specific squares and pieces from the analysis.
 
 Board:
 ${boardAscii}
@@ -60,30 +63,25 @@ ${boardAscii}
 Move history: ${moveHistory}
 
 You have tools to interact with the chessboard:
-1. draw_arrow: Use this to point out specific moves, threats, or squares on the board.
-2. get_top_moves: Use this to analyze positions and find the best moves.
-3. make_move: Use ONLY for demonstration purposes or to suggest a move to the player. The game's actual moves are handled automatically.
+1. draw_arrow: Visualize threats, attacks, defenses, and ideas on the board.
+2. get_top_moves: Analyze ANY position. Pass a FEN string to analyze hypothetical positions.
 
-IMPORTANT: You are a COACH, not the player. The computer moves are handled by a separate engine. When it's your turn to speak, you MUST:
-1. Briefly explain the implications of the latest moves (1-2 sentences max).
-2. MANDATORY: Use draw_arrow to highlight the tactical reasoning (e.g., an attack, defense, or key square). NEVER just talk without drawing at least one arrow to illustrate your point.
+IMPORTANT: You are a COACH, not the player. The computer moves are handled by a separate engine. When it's your turn to speak:
+1. Explain WHY the last moves were good/bad using the tactical data (threats, hanging pieces).
+2. MANDATORY: Use draw_arrow to visualize the threats and ideas. NEVER talk without arrows.
 
 ARROW USAGE IS MANDATORY:
-- You must use draw_arrow for EVERY explanation. If you mention a piece or square, you MUST draw an arrow involving it.
-- VISUALIZE THE ANALYSIS: Use the provided Stockfish "Threats" and "Defenses" data to draw arrows.
-- COLOR CODING:
-    - Use "red" for threats (from attacker to target).
-    - Use "green" for general positional ideas.
-    - Use "blue" for defenses (from defender to protected piece).
-- If Stockfish identifies a threat (e.g., "Threat: Qh5 attacks f7"), draw a RED arrow from h5 to f7.
-- If a move defends a piece, draw a BLUE arrow from the defender to the piece.
+- When the analysis says "knight on f3 attacks pawn on e5", draw a RED arrow from f3 to e5.
+- When a piece is hanging (attacked but undefended), draw a RED arrow to it showing the threat.
+- When suggesting a move, draw a GREEN arrow showing the move.
+- When showing a defensive move, draw a BLUE arrow.
+- EVERY piece or square you mention MUST have a corresponding arrow.
 
 CONCISENESS IS CRITICAL:
-- Your responses are spoken aloud. Keep the SPOKEN text extremely brief and focused.
-- Tool calls (like draw_arrow) are NOT considered "verbose"—use them generously to illustrate your points.
-- During the opening (first 10-15 moves), do not provide deep analysis unless specifically asked or if something very unusual happens. Just name the opening or make your move quickly.
-- Avoid repeating information. If the user has questions, they will ask.
-- Any mention of a square or piece MUST be accompanied by an arrow (draw_arrow).
+- Your responses are spoken aloud. Keep speech brief (1-2 sentences).
+- Arrow tool calls don't count as verbose—use many arrows to illustrate your points.
+- During the opening (first 10-15 moves), just name the opening unless something unusual happens.
+- Focus on the most important tactical feature: the biggest threat or hanging piece.
 `;
 
 /**
@@ -108,7 +106,7 @@ function createCoachTools(
         }),
         tool({
             name: 'get_top_moves',
-            description: 'Analyze a position and get the top moves with evaluations. Use this to understand the best moves in a position.',
+            description: 'Analyze a position and get the top moves with evaluations, threats, and tactical features. Use this to understand WHY a move is good.',
             parameters: GetTopMovesParameters,
             strict: true,
             execute: async ({ fen, numMoves = 3, depth = 15 }: z.infer<typeof GetTopMovesParameters>) => {
@@ -120,8 +118,17 @@ function createCoachTools(
                         move: m.san,
                         evaluation: m.evaluation,
                         mate: m.mate,
-                        threats: m.threats.map(t => `${t.from}->${t.to} (${t.piece})`),
-                        defenses: m.defends.map(d => `${d.from}->${d.to} (${d.piece})`),
+                        isCheck: m.isCheck,
+                        isCapture: m.isCapture,
+                        capturedPiece: m.capturedPiece,
+                        // Tactical reasoning
+                        newThreats: m.tactical.threats
+                            .filter(t => t.isNewThreat)
+                            .map(t => `${t.attacker} on ${t.attackerSquare} attacks ${t.target} on ${t.targetSquare}`),
+                        hangingPieces: m.tactical.hanging
+                            .map(h => `${h.piece} on ${h.square} (value: ${h.value})`),
+                        tacticalNotes: m.tactical.notes,
+                        principalVariation: m.principalVariation.slice(0, 4).join(" "),
                     }))
                 };
             }
@@ -686,26 +693,59 @@ export function useCoachSession() {
                 const moveHistoryStr = moveHistory.map((m: Move) => m.san).join(" ");
                 const boardAscii = game.ascii();
 
-                // Get Stockfish analysis for the current position (player's turn or game over)
+                // Get position analysis for the current position (player's turn or game over)
                 const analysis = await getTopMoves(fen, 3, 15);
                 const analysisStr = analysis.map((m, i) => {
-                    const threatStr = m.threats.length > 0
-                        ? `\n   - Threats: ${m.threats.map(t => `${t.from}->${t.to} (${t.piece})`).join(', ')}`
-                        : '';
-                    const defenseStr = m.defends.length > 0
-                        ? `\n   - Defenses: ${m.defends.map(d => `${d.from}->${d.to} (${d.piece})`).join(', ')}`
-                        : '';
-                    return `${i + 1}. ${m.san} (Eval: ${m.evaluation}${m.mate ? `, Mate in ${m.mate}` : ''})${threatStr}${defenseStr}`;
-                }).join('\n');
+                    const lines: string[] = [];
+                    
+                    // Main move info
+                    const evalStr = m.mate ? `Mate in ${m.mate}` : `Eval: ${m.evaluation ?? 'N/A'}`;
+                    lines.push(`${i + 1}. ${m.san} (${evalStr})`);
+                    
+                    // Why is this move good? Tactical features
+                    const newThreats = m.tactical.threats.filter(t => t.isNewThreat);
+                    if (newThreats.length > 0) {
+                        const threatDescriptions = newThreats.map(t => 
+                            `${t.attacker} on ${t.attackerSquare} attacks ${t.target} on ${t.targetSquare}`
+                        );
+                        lines.push(`   WHY GOOD: Creates threats: ${threatDescriptions.join('; ')}`);
+                    }
+                    
+                    if (m.tactical.hanging.length > 0) {
+                        const hangingDescriptions = m.tactical.hanging.map(h => 
+                            `${h.piece} on ${h.square}`
+                        );
+                        lines.push(`   HANGING PIECES: ${hangingDescriptions.join(', ')}`);
+                    }
+                    
+                    if (m.isCapture && m.capturedPiece) {
+                        lines.push(`   CAPTURES: ${m.capturedPiece}`);
+                    }
+                    
+                    if (m.isCheck) {
+                        lines.push(`   GIVES CHECK`);
+                    }
+                    
+                    if (m.tactical.notes.length > 0) {
+                        lines.push(`   NOTES: ${m.tactical.notes.join(', ')}`);
+                    }
+                    
+                    // Expected continuation (brief)
+                    if (m.principalVariation.length > 1) {
+                        lines.push(`   Expected play: ${m.principalVariation.slice(0, 4).join(' ')}`);
+                    }
+                    
+                    return lines.join('\n');
+                }).join('\n\n');
 
                 let updateMsg = "";
                 if (gameOver) {
                     const status = game.isCheckmate()
                         ? (game.turn() === "w" ? "Black wins by checkmate!" : "White wins by checkmate!")
                         : "The game is over (Draw/Stalemate).";
-                    updateMsg = `THE GAME IS OVER. ${status}\n\nFinal Board:\n${boardAscii}\n\nFinal History: ${moveHistoryStr}\n\nFinal Stockfish Analysis:\n${analysisStr}\n\nPlease provide a brief wrap-up of the game, highlighting the critical moments and why the game ended the way it did. Use draw_arrow to illustrate key points.`;
+                    updateMsg = `THE GAME IS OVER. ${status}\n\nFinal Board:\n${boardAscii}\n\nFinal History: ${moveHistoryStr}\n\nFinal Analysis:\n${analysisStr}\n\nPlease provide a brief wrap-up of the game, highlighting the critical moments and why the game ended the way it did. Use draw_arrow to illustrate key points.`;
                 } else {
-                    updateMsg = `Turn complete. Last move: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nStockfish Analysis of current position:\n${analysisStr}\n\nUsing this analysis, briefly explain the current state of the game after the latest moves. Mention any significant changes in evaluation or new threats. Use draw_arrow (RED for threats, BLUE for defenses, GREEN for positional ideas) to visualize the specific piece interactions found by Stockfish.`;
+                    updateMsg = `Turn complete. Last move: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nPosition Analysis (best moves for the player):\n${analysisStr}\n\nExplain the current state briefly. Focus on the tactical features above (threats, hanging pieces). Use draw_arrow to visualize: RED for threats (attacker -> target), BLUE for hanging pieces or defenses, GREEN for suggested moves.`;
                 }
 
                 console.debug("[useCoachSession] Sending turn update to agent with analysis");

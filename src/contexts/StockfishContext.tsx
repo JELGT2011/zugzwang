@@ -1,8 +1,39 @@
 "use client";
 
 import { StockfishEngine } from "@/lib/stockfish";
-import { Chess, Square } from "chess.js";
+import { Chess, type Square, type PieceSymbol } from "chess.js";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+
+// Piece values for material calculation
+const PIECE_VALUES: Record<PieceSymbol, number> = {
+    p: 1, n: 3, b: 3, r: 5, q: 9, k: 0
+};
+
+const PIECE_NAMES: Record<PieceSymbol, string> = {
+    p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king'
+};
+
+// Tactical information about a position after a move
+export interface TacticalInfo {
+    // Threats: pieces the moving side is now attacking (potential captures next turn)
+    threats: Array<{
+        attacker: string;      // e.g., "knight"
+        attackerSquare: string; // e.g., "f3"
+        target: string;        // e.g., "pawn"
+        targetSquare: string;  // e.g., "e5"
+        isNewThreat: boolean;  // Was this threat created by the move?
+    }>;
+    // Hanging pieces: opponent pieces that are attacked but not defended
+    hanging: Array<{
+        piece: string;         // e.g., "bishop"
+        square: string;        // e.g., "c4"
+        value: number;         // Material value
+    }>;
+    // Material balance after the move (positive = white advantage)
+    materialBalance: number;
+    // Key positional notes
+    notes: string[];
+}
 
 export interface MoveAnnotation {
     move: string; // UCI format (e.g., "e2e4")
@@ -14,8 +45,8 @@ export interface MoveAnnotation {
     isCapture: boolean;
     capturedPiece: string | null;
     promotionPiece: string | null;
-    threats: Array<{ from: string, to: string, piece: string }>; // Detailed threats
-    defends: Array<{ from: string, to: string, piece: string }>; // Detailed defenses
+    principalVariation: string[]; // Expected best continuation (SAN notation)
+    tactical: TacticalInfo; // Rich tactical analysis
 }
 
 interface StockfishContextType {
@@ -27,73 +58,158 @@ interface StockfishContextType {
 
 const StockfishContext = createContext<StockfishContextType | undefined>(undefined);
 
-// Helper function to analyze threats in a position
-function analyzeThreats(game: Chess, colorWhoMoved: 'w' | 'b'): Array<{ from: string, to: string, piece: string }> {
-    const threats: Array<{ from: string, to: string, piece: string }> = [];
-
-    // Create a copy and set the turn to the color that just moved
-    const tokens = game.fen().split(' ');
-    tokens[1] = colorWhoMoved;
-    const tempGame = new Chess(tokens.join(' '));
-
-    // In a single pass, every move that captures a piece is a threat
-    const moves = tempGame.moves({ verbose: true });
-    for (const move of moves) {
-        if (move.captured) {
-            threats.push({
-                from: move.from,
-                to: move.to,
-                piece: move.captured
-            });
+// Helper function to convert UCI moves to SAN notation
+function uciToSan(fen: string, uciMoves: string[]): string[] {
+    const sanMoves: string[] = [];
+    try {
+        const game = new Chess(fen);
+        for (const uci of uciMoves) {
+            try {
+                const move = game.move(uci);
+                if (move) {
+                    sanMoves.push(move.san);
+                } else {
+                    break; // Invalid move, stop processing
+                }
+            } catch {
+                break; // Invalid move, stop processing
+            }
         }
+    } catch {
+        // Invalid FEN or other error
     }
-
-    return threats;
+    return sanMoves;
 }
 
-// Helper function to analyze defended pieces
-function analyzeDefenses(game: Chess, colorWhoMoved: 'w' | 'b'): Array<{ from: string, to: string, piece: string }> {
-    const defends: Array<{ from: string, to: string, piece: string }> = [];
-
+// Calculate material balance (positive = white advantage)
+function calculateMaterial(game: Chess): number {
     const board = game.board();
-    const opponentColor = colorWhoMoved === 'w' ? 'b' : 'w';
-    
-    // Prepare FEN with turn set to our color
-    const tokens = game.fen().split(' ');
-    tokens[1] = colorWhoMoved;
-    const baseFen = tokens.join(' ');
+    let balance = 0;
+    for (const row of board) {
+        for (const piece of row) {
+            if (piece) {
+                const value = PIECE_VALUES[piece.type];
+                balance += piece.color === 'w' ? value : -value;
+            }
+        }
+    }
+    return balance;
+}
 
-    for (let rank = 0; rank < 8; rank++) {
-        for (let file = 0; file < 8; file++) {
-            const piece = board[rank][file];
+// Analyze tactical features of a position after a move
+function analyzeTactics(beforeFen: string, afterGame: Chess, movingSide: 'w' | 'b'): TacticalInfo {
+    const threats: TacticalInfo['threats'] = [];
+    const hanging: TacticalInfo['hanging'] = [];
+    const notes: string[] = [];
+    
+    const opponentColor = movingSide === 'w' ? 'b' : 'w';
+    
+    try {
+        // Get the position BEFORE the move to compare threats
+        const beforeGame = new Chess(beforeFen);
+        const beforeThreats = new Set<string>();
+        
+        // Find what the moving side was threatening BEFORE the move
+        // by checking what captures were available
+        const beforeMoves = beforeGame.moves({ verbose: true });
+        for (const m of beforeMoves) {
+            if (m.captured) {
+                beforeThreats.add(`${m.from}->${m.to}`);
+            }
+        }
+        
+        // Now check what the moving side threatens AFTER the move
+        // We need to simulate their turn by modifying the FEN
+        const afterFenParts = afterGame.fen().split(' ');
+        afterFenParts[1] = movingSide; // Set turn to moving side
+        
+        try {
+            const threatCheckGame = new Chess(afterFenParts.join(' '));
+            const afterMoves = threatCheckGame.moves({ verbose: true });
             
-            // CRITICAL: Skip the King. chess.js crashes if moves() is called without a King.
-            if (piece && piece.color === colorWhoMoved && piece.type !== 'k') {
-                const square = (String.fromCharCode(97 + file) + (8 - rank)) as Square;
-                
-                // Only check if actually defended to save cycles
-                if (game.isAttacked(square, colorWhoMoved)) {
-                    const tempGame = new Chess(baseFen);
-                    // Replace our piece with an opponent pawn to make it a legal "capture" target
-                    tempGame.remove(square);
-                    tempGame.put({ type: 'p', color: opponentColor }, square);
+            for (const m of afterMoves) {
+                if (m.captured) {
+                    const threatKey = `${m.from}->${m.to}`;
+                    const isNew = !beforeThreats.has(threatKey);
                     
-                    const moves = tempGame.moves({ verbose: true });
-                    for (const move of moves) {
-                        if (move.to === square) {
-                            defends.push({
-                                from: move.from,
-                                to: square,
-                                piece: piece.type
+                    const attackerPiece = threatCheckGame.get(m.from as Square);
+                    if (attackerPiece) {
+                        threats.push({
+                            attacker: PIECE_NAMES[attackerPiece.type],
+                            attackerSquare: m.from,
+                            target: PIECE_NAMES[m.captured as PieceSymbol],
+                            targetSquare: m.to,
+                            isNewThreat: isNew,
+                        });
+                    }
+                }
+            }
+        } catch {
+            // Position might be invalid with modified turn, skip threat analysis
+        }
+        
+        // Find hanging pieces (opponent pieces attacked but not defended)
+        const board = afterGame.board();
+        for (let rank = 0; rank < 8; rank++) {
+            for (let file = 0; file < 8; file++) {
+                const piece = board[rank][file];
+                if (piece && piece.color === opponentColor && piece.type !== 'k') {
+                    const square = (String.fromCharCode(97 + file) + (8 - rank)) as Square;
+                    
+                    // Check if attacked by moving side
+                    const isAttacked = afterGame.isAttacked(square, movingSide);
+                    if (isAttacked) {
+                        // Check if defended by opponent
+                        const isDefended = afterGame.isAttacked(square, opponentColor);
+                        if (!isDefended) {
+                            hanging.push({
+                                piece: PIECE_NAMES[piece.type],
+                                square,
+                                value: PIECE_VALUES[piece.type],
                             });
                         }
                     }
                 }
             }
         }
+        
+        // Add contextual notes
+        if (afterGame.isCheck()) {
+            notes.push("Check!");
+        }
+        if (afterGame.isCheckmate()) {
+            notes.push("Checkmate!");
+        }
+        if (afterGame.isStalemate()) {
+            notes.push("Stalemate.");
+        }
+        if (hanging.length > 0) {
+            const highestValue = Math.max(...hanging.map(h => h.value));
+            if (highestValue >= 5) {
+                notes.push(`Major piece hanging!`);
+            } else if (highestValue >= 3) {
+                notes.push(`Minor piece hanging.`);
+            }
+        }
+        
+        const newThreats = threats.filter(t => t.isNewThreat);
+        if (newThreats.length > 0) {
+            const highValueThreats = newThreats.filter(t => PIECE_VALUES[t.target.charAt(0) as PieceSymbol] >= 3);
+            if (highValueThreats.length > 0) {
+                notes.push(`Creates new threats.`);
+            }
+        }
+        
+    } catch (error) {
+        console.error("Error in tactical analysis:", error);
     }
-
-    return defends;
+    
+    return {
+        threats,
+        hanging,
+        materialBalance: calculateMaterial(afterGame),
+        notes,
+    };
 }
 
 export function StockfishProvider({ children }: { children: React.ReactNode }) {
@@ -195,8 +311,13 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
 
                 thinkingRef.current = true;
 
-                // Store PV lines as we receive them
-                const pvLines = new Map<number, { move: string; score: number | null; mate: number | null }>();
+                // Store PV lines as we receive them (includes full continuation)
+                const pvLines = new Map<number, { 
+                    move: string; 
+                    score: number | null; 
+                    mate: number | null;
+                    pv: string[]; // Full principal variation in UCI format
+                }>();
 
                 // Set MultiPV option
                 engineRef.current.send(`setoption name MultiPV value ${numMoves}`);
@@ -216,9 +337,11 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
                                 const moveResult = gameCopy.move(pvData.move);
 
                                 if (moveResult) {
-                                    // Analyze threats and defenses in the resulting position
-                                    const threats = analyzeThreats(gameCopy, moveResult.color);
-                                    const defends = analyzeDefenses(gameCopy, moveResult.color);
+                                    // Convert UCI PV moves to SAN notation for readability
+                                    const principalVariation = uciToSan(fen, pvData.pv);
+                                    
+                                    // Analyze tactical features of the position after this move
+                                    const tactical = analyzeTactics(fen, gameCopy, moveResult.color);
 
                                     annotations.push({
                                         move: pvData.move,
@@ -230,8 +353,8 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
                                         isCapture: moveResult.captured !== undefined,
                                         capturedPiece: moveResult.captured || null,
                                         promotionPiece: moveResult.promotion || null,
-                                        threats,
-                                        defends,
+                                        principalVariation,
+                                        tactical,
                                     });
                                 }
                             } catch (error) {
@@ -246,17 +369,20 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
                         // Stream callback to collect PV lines
                         // Format: info depth X seldepth Y multipv N score cp XXX nodes XXX pv e2e4 e7e5 ...
                         const multipvMatch = infoLine.match(/multipv (\d+)/);
-                        const pvMatch = infoLine.match(/pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
                         const scoreMatch = infoLine.match(/score cp (-?\d+)/);
                         const mateMatch = infoLine.match(/score mate (-?\d+)/);
+                        
+                        // Extract full PV line (all moves after "pv")
+                        const pvFullMatch = infoLine.match(/\bpv\s+((?:[a-h][1-8][a-h][1-8][qrbn]?\s*)+)/);
 
-                        if (multipvMatch && pvMatch) {
+                        if (multipvMatch && pvFullMatch) {
                             const pvIndex = parseInt(multipvMatch[1]);
-                            const move = pvMatch[1];
+                            const pvMoves = pvFullMatch[1].trim().split(/\s+/);
+                            const move = pvMoves[0];
                             const score = scoreMatch ? parseInt(scoreMatch[1]) : null;
                             const mate = mateMatch ? parseInt(mateMatch[1]) : null;
 
-                            pvLines.set(pvIndex, { move, score, mate });
+                            pvLines.set(pvIndex, { move, score, mate, pv: pvMoves });
                         }
                     }
                 );
