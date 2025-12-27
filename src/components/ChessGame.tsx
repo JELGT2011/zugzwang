@@ -6,7 +6,7 @@ import NewGamePanel from "@/components/NewGamePanel";
 import { Badge } from "@/components/ui/badge";
 import { useBoardController, useBoardEngine, useCoachController } from "@/hooks";
 import { Chess } from "chess.js";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Chessboard } from "react-chessboard";
 
 export default function ChessGame() {
@@ -15,12 +15,26 @@ export default function ChessGame() {
     playerColor,
     arrows,
     hasGameStarted,
+    moveHistory,
     makeMove,
     startNewGame,
     getStatus,
     isGameOver,
     getFen,
   } = useBoardController();
+
+  // Compute highlight styles for the last move
+  const lastMoveSquareStyles = useMemo(() => {
+    if (moveHistory.length === 0) return {};
+    
+    const lastMove = moveHistory[moveHistory.length - 1];
+    const highlightColor = "rgba(255, 210, 77, 0.5)"; // Warm golden yellow
+    
+    return {
+      [lastMove.from]: { backgroundColor: highlightColor },
+      [lastMove.to]: { backgroundColor: highlightColor },
+    };
+  }, [moveHistory]);
 
   // Engine automation - ONLY called here (handles computer opponent moves)
   useBoardEngine();
@@ -97,6 +111,7 @@ export default function ChessGame() {
                 clearArrowsOnPositionChange: true,
                 darkSquareStyle: { backgroundColor: "#7c6f64" },
                 lightSquareStyle: { backgroundColor: "#d5c4a1" },
+                squareStyles: lastMoveSquareStyles,
                 boardStyle: {
                   borderRadius: "8px",
                 },
