@@ -1,11 +1,26 @@
 import { useStockfish, type MoveAnnotation } from "@/contexts/StockfishContext";
+import { useBoardStore } from "@/stores";
 import { useCoachStore } from "@/stores/coachStore";
 import { OpenAIRealtimeWebRTC, RealtimeAgent, RealtimeSession, tool } from "@openai/agents/realtime";
-import { type Move } from "chess.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Chess, type Move } from "chess.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Arrow } from "react-chessboard";
 import { z } from "zod";
 import { useBoardController } from "./useBoardController";
+
+// ============================================================================
+// Module-level session state (shared across all hook instances)
+// This ensures that session refs are not duplicated when the hook is called
+// from multiple components.
+// ============================================================================
+const sharedSessionState = {
+    session: null as RealtimeSession | null,
+    audioElement: null as HTMLAudioElement | null,
+    lastProcessedMove: null as string | null,
+    messageQueue: [] as string[],
+    isResponseActive: false,
+    currentUserTranscript: "",
+};
 
 // Zod schemas for coach tools
 const DrawArrowParameters = z.object({
@@ -117,6 +132,11 @@ function createCoachTools(
 /**
  * CoachController hook - provides a clean interface to the AI coach connection and state.
  * Manages the realtime session, audio devices, and coach interactions.
+ * 
+ * NOTE: This hook is safe to call from multiple components. Session state is shared
+ * at the module level to prevent duplicate sessions.
+ * 
+ * For move-watching effects, use useCoachSession() which should only be called ONCE.
  */
 export function useCoachController() {
     // Get coach state
@@ -145,14 +165,11 @@ export function useCoachController() {
     const isConnected = connectionState === "connected";
     const isConnecting = connectionState === "connecting";
 
-    const { playerColor, addArrow, makeMove, getFen, getLastMove, getMoveHistory, game, isGameOver, isThinking } = useBoardController();
+    const { playerColor, addArrow, getFen, getMoveHistory, game } = useBoardController();
 
-    // Get actual values (not functions) so we can watch them in useEffect
+    // Get actual values (not functions) for use in connect()
     const fen = getFen();
-    const lastMove = getLastMove();
     const moveHistory = getMoveHistory();
-    const currentTurn = game.turn();
-    const gameOver = isGameOver();
 
     // Get stockfish context for analysis
     const { getTopMoves } = useStockfish();
@@ -161,32 +178,24 @@ export function useCoachController() {
     const [showDeviceModal, setShowDeviceModal] = useState(false);
     const [pendingConnection, setPendingConnection] = useState<{ fen: string; moveHistory: string; boardAscii: string } | null>(null);
 
-    // Session refs (not stored in Zustand as they're not serializable)
-    const sessionRef = useRef<RealtimeSession | null>(null);
-    const audioElementRef = useRef<HTMLAudioElement | null>(null);
-    const lastProcessedMove = useRef<string | null>(null);
-    const messageQueue = useRef<string[]>([]);
-    const isResponseActive = useRef<boolean>(false);
-    const currentUserTranscript = useRef<string>("");
-
     const cleanupSession = useCallback(() => {
-        if (sessionRef.current) {
+        if (sharedSessionState.session) {
             try {
-                sessionRef.current.close();
+                sharedSessionState.session.close();
             } catch (e) {
                 console.error("Error closing session:", e);
             }
-            sessionRef.current = null;
+            sharedSessionState.session = null;
         }
-        if (audioElementRef.current) {
-            audioElementRef.current.pause();
-            audioElementRef.current.srcObject = null;
-            audioElementRef.current = null;
+        if (sharedSessionState.audioElement) {
+            sharedSessionState.audioElement.pause();
+            sharedSessionState.audioElement.srcObject = null;
+            sharedSessionState.audioElement = null;
         }
-        // Reset state tracking refs
-        isResponseActive.current = false;
-        messageQueue.current = [];
-        lastProcessedMove.current = null;
+        // Reset state tracking
+        sharedSessionState.isResponseActive = false;
+        sharedSessionState.messageQueue = [];
+        sharedSessionState.lastProcessedMove = null;
 
         setConnectionState("disconnected");
     }, [setConnectionState]);
@@ -307,7 +316,7 @@ export function useCoachController() {
                 // Create an audio element for playback
                 const audioElement = new Audio();
                 audioElement.autoplay = true;
-                audioElementRef.current = audioElement;
+                sharedSessionState.audioElement = audioElement;
 
                 // Set the output device if specified and browser supports it
                 if (selectedOutputDeviceId) {
@@ -360,7 +369,7 @@ export function useCoachController() {
                         },
                     },
                 });
-                sessionRef.current = session;
+                sharedSessionState.session = session;
 
                 // Listen for all transport events for debugging
                 session.transport.on("*", (event: any) => {
@@ -368,20 +377,20 @@ export function useCoachController() {
 
                     // Track response lifecycle
                     if (event.type === "response.created") {
-                        isResponseActive.current = true;
+                        sharedSessionState.isResponseActive = true;
                     }
                     if (event.type === "response.done") {
-                        isResponseActive.current = false;
+                        sharedSessionState.isResponseActive = false;
 
                         // If there are pending messages in the queue, send them now
-                        if (messageQueue.current.length > 0 && sessionRef.current) {
-                            console.debug(`[Queue] Processing ${messageQueue.current.length} queued messages`);
-                            while (messageQueue.current.length > 0) {
-                                const msg = messageQueue.current.shift();
+                        if (sharedSessionState.messageQueue.length > 0 && sharedSessionState.session) {
+                            console.debug(`[Queue] Processing ${sharedSessionState.messageQueue.length} queued messages`);
+                            while (sharedSessionState.messageQueue.length > 0) {
+                                const msg = sharedSessionState.messageQueue.shift();
                                 if (!msg) continue;
 
                                 console.debug("[Queue] Sending message:", msg);
-                                sessionRef.current.sendMessage(msg);
+                                sharedSessionState.session.sendMessage(msg);
                             }
                         }
                     }
@@ -403,14 +412,14 @@ export function useCoachController() {
                 // Listen for user's audio transcript deltas
                 session.transport.on("conversation.item.input_audio_transcription.delta", (event: any) => {
                     if (event.delta) {
-                        currentUserTranscript.current += event.delta;
+                        sharedSessionState.currentUserTranscript += event.delta;
                     }
                 });
 
                 // Listen for user's audio transcript completion
                 session.transport.on("conversation.item.input_audio_transcription.completed", (event: any) => {
-                    console.debug("[User transcript completed]", event.transcript || currentUserTranscript.current);
-                    const userText = event.transcript || currentUserTranscript.current;
+                    console.debug("[User transcript completed]", event.transcript || sharedSessionState.currentUserTranscript);
+                    const userText = event.transcript || sharedSessionState.currentUserTranscript;
                     if (userText?.trim()) {
                         addToHistory({
                             role: "user",
@@ -419,7 +428,7 @@ export function useCoachController() {
                         });
                     }
                     // Clear the building transcript
-                    currentUserTranscript.current = "";
+                    sharedSessionState.currentUserTranscript = "";
                 });
 
                 // Listen for assistant's audio transcript deltas
@@ -464,14 +473,14 @@ export function useCoachController() {
                 console.debug("[Connected successfully]");
 
                 // Re-check if we were cleaned up during the async connect call
-                if (sessionRef.current === session) {
+                if (sharedSessionState.session === session) {
                     setConnectionState("connected");
                     console.debug("[Session active and connected]");
 
                     // Explicitly ensure audio element is ready to play
-                    if (audioElementRef.current && audioElementRef.current.paused) {
+                    if (sharedSessionState.audioElement && sharedSessionState.audioElement.paused) {
                         try {
-                            await audioElementRef.current.play();
+                            await sharedSessionState.audioElement.play();
                             console.debug("[Audio Element] Started playback after connection");
                         } catch (e) {
                             console.warn("[Audio Element] Could not start playback:", e);
@@ -509,85 +518,29 @@ export function useCoachController() {
     );
 
     const sendMessage = useCallback((message: string) => {
-        if (!sessionRef.current) {
+        if (!sharedSessionState.session) {
             console.warn("[sendMessage] No active session");
             return;
         }
 
         // If a response is already active, queue this message for later
-        if (isResponseActive.current) {
+        if (sharedSessionState.isResponseActive) {
             console.debug("[sendMessage] Response active, queueing message:", message);
-            messageQueue.current.push(message);
+            sharedSessionState.messageQueue.push(message);
         } else {
             // Otherwise send immediately
             console.debug("[sendMessage] Sending message immediately");
-            sessionRef.current.sendMessage(message);
+            sharedSessionState.session.sendMessage(message);
         }
     }, []);
 
     const updateLastProcessedMove = useCallback((move: string) => {
-        lastProcessedMove.current = move;
+        sharedSessionState.lastProcessedMove = move;
     }, []);
 
     const getLastProcessedMove = useCallback(() => {
-        return lastProcessedMove.current;
+        return sharedSessionState.lastProcessedMove;
     }, []);
-
-    // Watch for moves and send updates to the coach
-    // Turn-based coaching: Notify coach when it's the player's turn again (after engine move)
-    // or when the game is over.
-    useEffect(() => {
-        if (!isConnected) return;
-
-        const handleMoveUpdate = async () => {
-            // We want to notify the coach in two cases:
-            // 1. It's the player's turn and a move was just made (by the engine)
-            // 2. The game is over
-            const isPlayersTurn = currentTurn === playerColor;
-            const shouldNotify = (isPlayersTurn && !isThinking && lastMove !== lastProcessedMove.current) || gameOver;
-
-            if (shouldNotify && lastMove) {
-                lastProcessedMove.current = lastMove;
-
-                console.debug("[useCoachController] Turn complete or Game Over, notifying coach...");
-
-                const moveHistoryStr = moveHistory.map((m: Move) => m.san).join(" ");
-                const boardAscii = game.ascii();
-
-                // Get Stockfish analysis for the current position (player's turn or game over)
-                const analysis = await getTopMoves(fen, 3, 15);
-                const analysisStr = analysis.map((m, i) => {
-                    const threatStr = m.threats.length > 0
-                        ? `\n   - Threats: ${m.threats.map(t => `${t.from}->${t.to} (${t.piece})`).join(', ')}`
-                        : '';
-                    const defenseStr = m.defends.length > 0
-                        ? `\n   - Defenses: ${m.defends.map(d => `${d.from}->${d.to} (${d.piece})`).join(', ')}`
-                        : '';
-                    return `${i + 1}. ${m.san} (Eval: ${m.evaluation}${m.mate ? `, Mate in ${m.mate}` : ''})${threatStr}${defenseStr}`;
-                }).join('\n');
-
-                let updateMsg = "";
-                if (gameOver) {
-                    const status = game.isCheckmate()
-                        ? (game.turn() === "w" ? "Black wins by checkmate!" : "White wins by checkmate!")
-                        : "The game is over (Draw/Stalemate).";
-                    updateMsg = `THE GAME IS OVER. ${status}\n\nFinal Board:\n${boardAscii}\n\nFinal History: ${moveHistoryStr}\n\nFinal Stockfish Analysis:\n${analysisStr}\n\nPlease provide a brief wrap-up of the game, highlighting the critical moments and why the game ended the way it did. Use draw_arrow to illustrate key points.`;
-                } else {
-                    updateMsg = `Turn complete. Last move: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nStockfish Analysis of current position:\n${analysisStr}\n\nUsing this analysis, briefly explain the current state of the game after the latest moves. Mention any significant changes in evaluation or new threats. Use draw_arrow (RED for threats, BLUE for defenses, GREEN for positional ideas) to visualize the specific piece interactions found by Stockfish.`;
-                }
-
-                console.debug("[sendMessage] Sending turn update to agent with analysis");
-                sendMessage(updateMsg);
-            }
-        };
-
-        handleMoveUpdate();
-    }, [isConnected, lastMove, fen, moveHistory, game, currentTurn, playerColor, isThinking, gameOver, sendMessage, getTopMoves]);
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return cleanupSession;
-    }, [cleanupSession]);
 
     // Wrapper to initiate connection with device selection
     const initiateConnection = useCallback(async (overrides?: { fen: string, moveHistory: string, boardAscii: string }) => {
@@ -654,4 +607,138 @@ export function useCoachController() {
         clearHistory,
         resetCoachState,
     };
+}
+
+/**
+ * CoachSession hook - handles the session lifecycle and move-watching effects.
+ * 
+ * IMPORTANT: This hook should only be called ONCE in the entire app (typically in CoachPanel).
+ * It contains side effects that:
+ * 1. Watch for moves and send updates to the coach
+ * 2. Clean up the session on unmount
+ */
+export function useCoachSession() {
+    // Get state from stores
+    const connectionState = useCoachStore((state) => state.connectionState);
+    const setConnectionState = useCoachStore((state) => state.setConnectionState);
+
+    const fen = useBoardStore((state) => state.fen);
+    const moveHistory = useBoardStore((state) => state.moveHistory);
+    const playerColor = useBoardStore((state) => state.playerColor);
+    const isThinking = useBoardStore((state) => state.isThinking);
+
+    const isConnected = connectionState === "connected";
+
+    // Get stockfish context for analysis
+    const { getTopMoves } = useStockfish();
+
+    // Ref to track if we're currently processing to prevent race conditions
+    const isProcessingRef = useRef(false);
+
+    // Reconstruct Chess instance from FEN (memoized to avoid infinite loops)
+    const game = useMemo(() => new Chess(fen), [fen]);
+
+    // Compute derived values
+    const lastMove = moveHistory.length > 0 ? moveHistory[moveHistory.length - 1].san : null;
+    const currentTurn = game.turn();
+    const gameOver = game.isGameOver();
+
+    // Helper to send messages
+    const sendMessage = useCallback((message: string) => {
+        if (!sharedSessionState.session) {
+            console.warn("[sendMessage] No active session");
+            return;
+        }
+
+        if (sharedSessionState.isResponseActive) {
+            console.debug("[sendMessage] Response active, queueing message:", message);
+            sharedSessionState.messageQueue.push(message);
+        } else {
+            console.debug("[sendMessage] Sending message immediately");
+            sharedSessionState.session.sendMessage(message);
+        }
+    }, []);
+
+    // Watch for moves and send updates to the coach
+    // This effect ONLY runs in this hook instance
+    useEffect(() => {
+        if (!isConnected) return;
+
+        const handleMoveUpdate = async () => {
+            // We want to notify the coach in two cases:
+            // 1. It's the player's turn and a move was just made (by the engine)
+            // 2. The game is over
+            const isPlayersTurn = currentTurn === playerColor;
+            const shouldNotify = (isPlayersTurn && !isThinking && lastMove !== sharedSessionState.lastProcessedMove) || gameOver;
+
+            // Guard against race conditions and duplicate processing
+            if (!shouldNotify || !lastMove || isProcessingRef.current) {
+                return;
+            }
+
+            // Set processing flag immediately
+            isProcessingRef.current = true;
+            sharedSessionState.lastProcessedMove = lastMove;
+
+            console.debug("[useCoachSession] Turn complete or Game Over, notifying coach...");
+
+            try {
+                const moveHistoryStr = moveHistory.map((m: Move) => m.san).join(" ");
+                const boardAscii = game.ascii();
+
+                // Get Stockfish analysis for the current position (player's turn or game over)
+                const analysis = await getTopMoves(fen, 3, 15);
+                const analysisStr = analysis.map((m, i) => {
+                    const threatStr = m.threats.length > 0
+                        ? `\n   - Threats: ${m.threats.map(t => `${t.from}->${t.to} (${t.piece})`).join(', ')}`
+                        : '';
+                    const defenseStr = m.defends.length > 0
+                        ? `\n   - Defenses: ${m.defends.map(d => `${d.from}->${d.to} (${d.piece})`).join(', ')}`
+                        : '';
+                    return `${i + 1}. ${m.san} (Eval: ${m.evaluation}${m.mate ? `, Mate in ${m.mate}` : ''})${threatStr}${defenseStr}`;
+                }).join('\n');
+
+                let updateMsg = "";
+                if (gameOver) {
+                    const status = game.isCheckmate()
+                        ? (game.turn() === "w" ? "Black wins by checkmate!" : "White wins by checkmate!")
+                        : "The game is over (Draw/Stalemate).";
+                    updateMsg = `THE GAME IS OVER. ${status}\n\nFinal Board:\n${boardAscii}\n\nFinal History: ${moveHistoryStr}\n\nFinal Stockfish Analysis:\n${analysisStr}\n\nPlease provide a brief wrap-up of the game, highlighting the critical moments and why the game ended the way it did. Use draw_arrow to illustrate key points.`;
+                } else {
+                    updateMsg = `Turn complete. Last move: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nStockfish Analysis of current position:\n${analysisStr}\n\nUsing this analysis, briefly explain the current state of the game after the latest moves. Mention any significant changes in evaluation or new threats. Use draw_arrow (RED for threats, BLUE for defenses, GREEN for positional ideas) to visualize the specific piece interactions found by Stockfish.`;
+                }
+
+                console.debug("[useCoachSession] Sending turn update to agent with analysis");
+                sendMessage(updateMsg);
+            } finally {
+                isProcessingRef.current = false;
+            }
+        };
+
+        handleMoveUpdate();
+    }, [isConnected, lastMove, fen, moveHistory, game, currentTurn, playerColor, isThinking, gameOver, sendMessage, getTopMoves]);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (sharedSessionState.session) {
+                try {
+                    sharedSessionState.session.close();
+                } catch (e) {
+                    console.error("Error closing session:", e);
+                }
+                sharedSessionState.session = null;
+            }
+            if (sharedSessionState.audioElement) {
+                sharedSessionState.audioElement.pause();
+                sharedSessionState.audioElement.srcObject = null;
+                sharedSessionState.audioElement = null;
+            }
+            sharedSessionState.isResponseActive = false;
+            sharedSessionState.messageQueue = [];
+            sharedSessionState.lastProcessedMove = null;
+
+            setConnectionState("disconnected");
+        };
+    }, [setConnectionState]);
 }

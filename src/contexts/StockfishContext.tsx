@@ -20,7 +20,6 @@ export interface MoveAnnotation {
 
 interface StockfishContextType {
     isReady: boolean;
-    isThinking: boolean;
     getBestMove: (fen: string, depth?: number) => Promise<string | null>;
     getEvaluation: (fen: string) => Promise<string | null>;
     getTopMoves: (fen: string, numMoves?: number, depth?: number) => Promise<MoveAnnotation[]>;
@@ -99,8 +98,10 @@ function analyzeDefenses(game: Chess, colorWhoMoved: 'w' | 'b'): Array<{ from: s
 
 export function StockfishProvider({ children }: { children: React.ReactNode }) {
     const [isReady, setIsReady] = useState(false);
-    const [isThinking, setIsThinking] = useState(false);
     const engineRef = useRef<StockfishEngine | null>(null);
+    
+    // Ref for synchronous "thinking" guard to prevent concurrent Stockfish calls.
+    // Using a ref (not state) ensures synchronous read/write to prevent race conditions.
     const thinkingRef = useRef(false);
 
     // Initialize engine on mount
@@ -122,11 +123,6 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
         };
     }, []);
 
-    // Synchronize thinking ref with state
-    useEffect(() => {
-        thinkingRef.current = isThinking;
-    }, [isThinking]);
-
     const getBestMove = useCallback(
         (fen: string, depth: number = 12): Promise<string | null> => {
             return new Promise((resolve) => {
@@ -142,12 +138,12 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
                     return;
                 }
 
-                setIsThinking(true);
+                thinkingRef.current = true;
 
                 engineRef.current.send(`position fen ${fen}`);
                 engineRef.current.send(`go depth ${depth}`, (message) => {
                     const bestMoveMatch = message.match(/^bestmove\s([a-h][1-8][a-h][1-8][qrbn]?)/);
-                    setIsThinking(false);
+                    thinkingRef.current = false;
 
                     if (bestMoveMatch) {
                         const bestMove = bestMoveMatch[1];
@@ -197,7 +193,7 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
                     return;
                 }
 
-                setIsThinking(true);
+                thinkingRef.current = true;
 
                 // Store PV lines as we receive them
                 const pvLines = new Map<number, { move: string; score: number | null; mate: number | null }>();
@@ -209,7 +205,7 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
                 engineRef.current.send(
                     `go depth ${depth}`,
                     () => {
-                        setIsThinking(false);
+                        thinkingRef.current = false;
 
                         // Parse and annotate all collected moves
                         const annotations: MoveAnnotation[] = [];
@@ -271,7 +267,6 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
 
     const value: StockfishContextType = {
         isReady,
-        isThinking,
         getBestMove,
         getEvaluation,
         getTopMoves,

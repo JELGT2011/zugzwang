@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
@@ -29,6 +30,9 @@ export default function NewGamePanel({
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle>Start New Game</DialogTitle>
+                    <DialogDescription>
+                        Play against the computer
+                    </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-6 py-4">

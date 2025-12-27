@@ -1,7 +1,7 @@
 import { useStockfish } from "@/contexts/StockfishContext";
 import { useBoardStore } from "@/stores";
 import { Chess, Move } from "chess.js";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Arrow } from "react-chessboard";
 import { useMoveController } from "./useMoveController";
 
@@ -9,6 +9,9 @@ import { useMoveController } from "./useMoveController";
  * BoardController hook - provides a clean interface to the board state and actions.
  * Acts as a proxy/facade to the underlying Zustand store.
  * Reconstructs Chess instance from FEN when needed for computed values.
+ * 
+ * NOTE: This hook contains NO side effects. It's safe to call from multiple components.
+ * For engine move automation, use useBoardEngine() which should only be called ONCE.
  */
 export function useBoardController() {
     // Get store state (all serializable)
@@ -19,18 +22,12 @@ export function useBoardController() {
     const hasGameStarted = useBoardStore((state) => state.hasGameStarted);
     const gameMode = useBoardStore((state) => state.gameMode);
     const isThinking = useBoardStore((state) => state.isThinking);
-    const lastEngineMoveFen = useBoardStore((state) => state.lastEngineMoveFen);
 
     // Get store actions
     const storeMakeMove = useBoardStore((state) => state.makeMove);
     const storeStartNewGame = useBoardStore((state) => state.startNewGame);
     const storeAddArrow = useBoardStore((state) => state.addArrow);
     const storeClearArrows = useBoardStore((state) => state.clearArrows);
-    const setIsThinking = useBoardStore((state) => state.setIsThinking);
-    const setLastEngineMoveFen = useBoardStore((state) => state.setLastEngineMoveFen);
-
-    const { getNextMove } = useMoveController();
-    const { isReady } = useStockfish();
 
     // Reconstruct Chess instance from FEN (memoized)
     const game = useMemo(() => {
@@ -101,45 +98,6 @@ export function useBoardController() {
         return game.turn() === playerColor;
     }, [game, playerColor]);
 
-    // Automated Move Effect
-    useEffect(() => {
-        if (!hasGameStarted || game.isGameOver() || !isReady) return;
-
-        const isEngineTurn = game.turn() !== playerColor;
-        if (isEngineTurn && !isThinking) {
-            const triggerEngineMove = async () => {
-                // Check if we've already handled this FEN to avoid duplicate triggers
-                if (lastEngineMoveFen === fen) return;
-                setLastEngineMoveFen(fen);
-
-                console.debug("[BoardController] Engine turn detected, getting move...");
-                setIsThinking(true);
-
-                // Add a small delay for a more natural feel
-                await new Promise(resolve => setTimeout(resolve, 600));
-
-                try {
-                    const move = await getNextMove(game);
-                    if (move) {
-                        console.debug("[BoardController] Engine making move:", move);
-                        makeMove(move.from, move.to, move.promotion);
-                    } else {
-                        console.warn("[BoardController] Engine failed to find a move");
-                        // Reset lastEngineMoveFen so we can try again if it failed
-                        setLastEngineMoveFen(null);
-                    }
-                } catch (error) {
-                    console.error("[BoardController] Error in engine move:", error);
-                    setLastEngineMoveFen(null);
-                } finally {
-                    setIsThinking(false);
-                }
-            };
-
-            triggerEngineMove();
-        }
-    }, [hasGameStarted, game, playerColor, isThinking, fen, getNextMove, makeMove, setIsThinking, isReady, lastEngineMoveFen, setLastEngineMoveFen]);
-
     return {
         // State
         game, // Reconstructed Chess instance for compatibility
@@ -166,4 +124,79 @@ export function useBoardController() {
         getTurn,
         isPlayerTurn,
     };
+}
+
+/**
+ * Engine automation hook - handles computer opponent moves.
+ * 
+ * IMPORTANT: This hook should only be called ONCE in the entire app (typically in ChessGame).
+ * It contains side effects that trigger engine moves when it's the computer's turn.
+ */
+export function useBoardEngine() {
+    const fen = useBoardStore((state) => state.fen);
+    const playerColor = useBoardStore((state) => state.playerColor);
+    const hasGameStarted = useBoardStore((state) => state.hasGameStarted);
+    const isThinking = useBoardStore((state) => state.isThinking);
+    const lastEngineMoveFen = useBoardStore((state) => state.lastEngineMoveFen);
+
+    const storeMakeMove = useBoardStore((state) => state.makeMove);
+    const setIsThinking = useBoardStore((state) => state.setIsThinking);
+    const setLastEngineMoveFen = useBoardStore((state) => state.setLastEngineMoveFen);
+
+    const { getNextMove } = useMoveController();
+    const { isReady } = useStockfish();
+
+    // Track if we're currently processing to prevent concurrent triggers
+    const isProcessingRef = useRef(false);
+
+    // Reconstruct Chess instance from FEN
+    const game = useMemo(() => new Chess(fen), [fen]);
+
+    // Automated Move Effect - only runs in this hook instance
+    useEffect(() => {
+        if (!hasGameStarted || game.isGameOver() || !isReady) return;
+
+        const isEngineTurn = game.turn() !== playerColor;
+
+        // Multiple guards to prevent duplicate triggers:
+        // 1. Not engine's turn
+        // 2. Already thinking (state-based guard)
+        // 3. Already processed this FEN (store-based guard)
+        // 4. Currently processing (ref-based guard for race conditions)
+        if (!isEngineTurn || isThinking || lastEngineMoveFen === fen || isProcessingRef.current) {
+            return;
+        }
+
+        const triggerEngineMove = async () => {
+            // Set ref immediately to prevent race conditions from Strict Mode double-invoke
+            isProcessingRef.current = true;
+            setLastEngineMoveFen(fen);
+            setIsThinking(true);
+
+            console.debug("[BoardEngine] Engine turn detected, getting move...");
+
+            // Add a small delay for a more natural feel
+            await new Promise(resolve => setTimeout(resolve, 600));
+
+            try {
+                const move = await getNextMove(game);
+                if (move) {
+                    console.debug("[BoardEngine] Engine making move:", move);
+                    storeMakeMove(move.from, move.to, move.promotion);
+                } else {
+                    console.warn("[BoardEngine] Engine failed to find a move");
+                    // Reset so we can try again
+                    setLastEngineMoveFen(null);
+                }
+            } catch (error) {
+                console.error("[BoardEngine] Error in engine move:", error);
+                setLastEngineMoveFen(null);
+            } finally {
+                setIsThinking(false);
+                isProcessingRef.current = false;
+            }
+        };
+
+        triggerEngineMove();
+    }, [hasGameStarted, game, playerColor, isThinking, fen, getNextMove, storeMakeMove, setIsThinking, isReady, lastEngineMoveFen, setLastEngineMoveFen]);
 }

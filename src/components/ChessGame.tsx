@@ -4,13 +4,13 @@ import CoachPanel from "@/components/CoachPanel";
 import GameControlsPanel from "@/components/GameControlsPanel";
 import NewGamePanel from "@/components/NewGamePanel";
 import { Badge } from "@/components/ui/badge";
-import { useBoardController, useCoachController } from "@/hooks";
+import { useBoardController, useBoardEngine, useCoachController } from "@/hooks";
 import { Chess } from "chess.js";
 import { useCallback, useState } from "react";
 import { Chessboard } from "react-chessboard";
 
 export default function ChessGame() {
-  // Board controller
+  // Board controller (state access only - safe for multiple components)
   const {
     playerColor,
     arrows,
@@ -22,7 +22,10 @@ export default function ChessGame() {
     getFen,
   } = useBoardController();
 
-  // Coach controller
+  // Engine automation - ONLY called here (handles computer opponent moves)
+  useBoardEngine();
+
+  // Coach controller (state access only - safe for multiple components)
   const { initiateConnection } = useCoachController();
 
   // Local UI state

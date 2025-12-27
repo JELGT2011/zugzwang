@@ -1,3 +1,3 @@
-export { useBoardController } from "./useBoardController";
-export { useCoachController } from "./useCoachController";
+export { useBoardController, useBoardEngine } from "./useBoardController";
+export { useCoachController, useCoachSession } from "./useCoachController";
 export { useMoveController } from "./useMoveController";

@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useCoachController } from "@/hooks";
+import { useCoachController, useCoachSession } from "@/hooks";
 import { Loader2, Mic, MicOff, Settings } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 
-// CoachPanel is now a purely presentational component
+// CoachPanel handles the coach UI and session lifecycle
 export default function CoachPanel() {
     const {
         isConnected,
@@ -31,6 +31,9 @@ export default function CoachPanel() {
         setSelectedOutputDeviceId,
         setShowDeviceModal,
     } = useCoachController();
+
+    // Coach session - ONLY called here (handles move-watching and cleanup)
+    useCoachSession();
 
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const scrollBottomRef = useRef<HTMLDivElement>(null);
