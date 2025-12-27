@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "./Logo";
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
@@ -10,7 +11,7 @@ export function Footer() {
           {/* Brand Section */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-2xl">♚</span>
+              <Logo size={24} />
               <h2 className="text-lg font-bold tracking-tight text-foreground">Zugzwang</h2>
             </div>
             <p className="text-sm text-muted-foreground">
