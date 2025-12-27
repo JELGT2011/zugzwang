@@ -3,9 +3,9 @@
 ## TODO
 - [ ] improve agent robustness and accuracy
     - [ ] consolidate message pattern
+    - [ ] maybe revert back to just using stockfish then use the agent to generate explanations and arrows?
 - [ ] load game from fen (or pgn)
 - [ ] improve QoL
-    - [ ] do not use default audio input/output devices
     - [ ] add eval bar
     - [ ] allow undo move
     - [ ] highlight squares in transcript (on hover, highlight the square)

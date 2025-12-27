@@ -377,6 +377,7 @@ export function useCoachController() {
                 });
 
                 const session = new RealtimeSession(agent, {
+                    // model: "gpt-realtime-mini-2025-10-06",
                     transport,
                     config: {
                         audio: {
