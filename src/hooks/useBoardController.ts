@@ -1,6 +1,7 @@
+import { useStockfish } from "@/contexts/StockfishContext";
 import { useBoardStore } from "@/stores";
 import { Chess, Move } from "chess.js";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import type { Arrow } from "react-chessboard";
 import { useMoveController } from "./useMoveController";
 
@@ -18,6 +19,7 @@ export function useBoardController() {
     const hasGameStarted = useBoardStore((state) => state.hasGameStarted);
     const gameMode = useBoardStore((state) => state.gameMode);
     const isThinking = useBoardStore((state) => state.isThinking);
+    const lastEngineMoveFen = useBoardStore((state) => state.lastEngineMoveFen);
 
     // Get store actions
     const storeMakeMove = useBoardStore((state) => state.makeMove);
@@ -25,9 +27,10 @@ export function useBoardController() {
     const storeAddArrow = useBoardStore((state) => state.addArrow);
     const storeClearArrows = useBoardStore((state) => state.clearArrows);
     const setIsThinking = useBoardStore((state) => state.setIsThinking);
+    const setLastEngineMoveFen = useBoardStore((state) => state.setLastEngineMoveFen);
 
     const { getNextMove } = useMoveController();
-    const lastEngineMoveRef = useRef<string | null>(null);
+    const { isReady } = useStockfish();
 
     // Reconstruct Chess instance from FEN (memoized)
     const game = useMemo(() => {
@@ -100,14 +103,14 @@ export function useBoardController() {
 
     // Automated Move Effect
     useEffect(() => {
-        if (!hasGameStarted || game.isGameOver()) return;
+        if (!hasGameStarted || game.isGameOver() || !isReady) return;
 
         const isEngineTurn = game.turn() !== playerColor;
         if (isEngineTurn && !isThinking) {
             const triggerEngineMove = async () => {
                 // Check if we've already handled this FEN to avoid duplicate triggers
-                if (lastEngineMoveRef.current === fen) return;
-                lastEngineMoveRef.current = fen;
+                if (lastEngineMoveFen === fen) return;
+                setLastEngineMoveFen(fen);
 
                 console.debug("[BoardController] Engine turn detected, getting move...");
                 setIsThinking(true);
@@ -122,9 +125,12 @@ export function useBoardController() {
                         makeMove(move.from, move.to, move.promotion);
                     } else {
                         console.warn("[BoardController] Engine failed to find a move");
+                        // Reset lastEngineMoveFen so we can try again if it failed
+                        setLastEngineMoveFen(null);
                     }
                 } catch (error) {
                     console.error("[BoardController] Error in engine move:", error);
+                    setLastEngineMoveFen(null);
                 } finally {
                     setIsThinking(false);
                 }
@@ -132,7 +138,7 @@ export function useBoardController() {
 
             triggerEngineMove();
         }
-    }, [hasGameStarted, game, playerColor, isThinking, fen, getNextMove, makeMove, setIsThinking]);
+    }, [hasGameStarted, game, playerColor, isThinking, fen, getNextMove, makeMove, setIsThinking, isReady, lastEngineMoveFen, setLastEngineMoveFen]);
 
     return {
         // State

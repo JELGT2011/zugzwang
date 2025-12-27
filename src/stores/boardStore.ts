@@ -16,6 +16,7 @@ interface BoardState {
     hasGameStarted: boolean;
     gameMode: GameMode;
     isThinking: boolean;
+    lastEngineMoveFen: string | null;
 
     // Actions
     setFen: (fen: string) => void;
@@ -26,6 +27,7 @@ interface BoardState {
     setHasGameStarted: (started: boolean) => void;
     setGameMode: (mode: GameMode) => void;
     setIsThinking: (isThinking: boolean) => void;
+    setLastEngineMoveFen: (fen: string | null) => void;
 
     // Game actions
     makeMove: (from: string, to: string, promotion?: string) => boolean;
@@ -47,6 +49,7 @@ export const useBoardStore = create<BoardState>()(
             hasGameStarted: false,
             gameMode: "game",
             isThinking: false,
+            lastEngineMoveFen: null,
 
             // Setters
             setFen: (fen) => set({ fen, arrows: [] }, false, "setFen"),
@@ -66,6 +69,7 @@ export const useBoardStore = create<BoardState>()(
                 set({ hasGameStarted: started }, false, "setHasGameStarted"),
             setGameMode: (gameMode) => set({ gameMode }, false, "setGameMode"),
             setIsThinking: (isThinking) => set({ isThinking }, false, "setIsThinking"),
+            setLastEngineMoveFen: (lastEngineMoveFen) => set({ lastEngineMoveFen }, false, "setLastEngineMoveFen"),
 
             // Game actions
             makeMove: (from, to, promotion = "q") => {
@@ -110,6 +114,7 @@ export const useBoardStore = create<BoardState>()(
                         hasGameStarted: true,
                         gameMode: mode,
                         isThinking: false,
+                        lastEngineMoveFen: null,
                     },
                     false,
                     "startNewGame"
@@ -124,6 +129,9 @@ export const useBoardStore = create<BoardState>()(
                         playerColor: "w",
                         arrows: [],
                         hasGameStarted: false,
+                        gameMode: "game",
+                        isThinking: false,
+                        lastEngineMoveFen: null,
                     },
                     false,
                     "resetGame"

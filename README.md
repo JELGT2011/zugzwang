@@ -16,3 +16,5 @@
 - [ ] features
     - [ ] implement puzzles
     - [ ] implement openings
+- [ ] bugs
+    - [ ] stockfish is initialized twice (and some others are too)
