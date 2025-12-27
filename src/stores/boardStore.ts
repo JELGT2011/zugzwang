@@ -5,6 +5,8 @@ import { devtools } from "zustand/middleware";
 
 const STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+export type GameMode = "game" | "puzzle" | "opening";
+
 interface BoardState {
     // Core game state (serializable)
     fen: string;
@@ -12,6 +14,8 @@ interface BoardState {
     playerColor: Color;
     arrows: Arrow[];
     hasGameStarted: boolean;
+    gameMode: GameMode;
+    isThinking: boolean;
 
     // Actions
     setFen: (fen: string) => void;
@@ -20,10 +24,12 @@ interface BoardState {
     addArrow: (arrow: Arrow) => void;
     clearArrows: () => void;
     setHasGameStarted: (started: boolean) => void;
+    setGameMode: (mode: GameMode) => void;
+    setIsThinking: (isThinking: boolean) => void;
 
     // Game actions
     makeMove: (from: string, to: string, promotion?: string) => boolean;
-    startNewGame: (asWhite: boolean) => void;
+    startNewGame: (asWhite: boolean, mode?: GameMode) => void;
     resetGame: () => void;
 
     // Helper to reconstruct Chess instance
@@ -39,6 +45,8 @@ export const useBoardStore = create<BoardState>()(
             playerColor: "w",
             arrows: [],
             hasGameStarted: false,
+            gameMode: "game",
+            isThinking: false,
 
             // Setters
             setFen: (fen) => set({ fen, arrows: [] }, false, "setFen"),
@@ -56,6 +64,8 @@ export const useBoardStore = create<BoardState>()(
             clearArrows: () => set({ arrows: [] }, false, "clearArrows"),
             setHasGameStarted: (started) =>
                 set({ hasGameStarted: started }, false, "setHasGameStarted"),
+            setGameMode: (gameMode) => set({ gameMode }, false, "setGameMode"),
+            setIsThinking: (isThinking) => set({ isThinking }, false, "setIsThinking"),
 
             // Game actions
             makeMove: (from, to, promotion = "q") => {
@@ -90,7 +100,7 @@ export const useBoardStore = create<BoardState>()(
                 }
             },
 
-            startNewGame: (asWhite) => {
+            startNewGame: (asWhite, mode = "game") => {
                 set(
                     {
                         fen: STARTING_FEN,
@@ -98,6 +108,8 @@ export const useBoardStore = create<BoardState>()(
                         playerColor: asWhite ? "w" : "b",
                         arrows: [],
                         hasGameStarted: true,
+                        gameMode: mode,
+                        isThinking: false,
                     },
                     false,
                     "startNewGame"

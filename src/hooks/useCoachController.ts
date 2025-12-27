@@ -1,6 +1,7 @@
 import { useStockfish, type MoveAnnotation } from "@/contexts/StockfishContext";
 import { useCoachStore } from "@/stores/coachStore";
 import { OpenAIRealtimeWebRTC, RealtimeAgent, RealtimeSession, tool } from "@openai/agents/realtime";
+import { type Move } from "chess.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Arrow } from "react-chessboard";
 import { z } from "zod";
@@ -11,12 +12,6 @@ const DrawArrowParameters = z.object({
     from: z.string().describe('The starting square (e.g., "e2").'),
     to: z.string().describe('The ending square (e.g., "e4").'),
     color: z.string().optional().describe('The color of the arrow (e.g., "red", "blue", "green"). Defaults to green.')
-});
-
-const MakeMoveParameters = z.object({
-    from: z.string().describe('The starting square (e.g., "e2").'),
-    to: z.string().describe('The ending square (e.g., "e4").'),
-    promotion: z.string().optional().describe('Promotion piece if promoting a pawn (e.g., "q" for queen).')
 });
 
 const GetTopMovesParameters = z.object({
@@ -36,11 +31,11 @@ const createCoachInstructions = (
 ) => `
 You are a Grandmaster Chess Coach named 'Zuggy'. 
 Your goal is to explain the current state of the game and moves in a clear, engaging, and educational way.
-The human player is playing as ${playerRole} and you are playing as ${engineRole}.
+The human player is playing as ${playerRole} and the computer opponent is playing as ${engineRole}.
 
 STOCKFISH GROUNDING:
 - You are a mouthpiece for Stockfish. 
-- With every player move, you will receive a detailed Stockfish analysis including top moves, evaluations, and threats.
+- After every turn (player move + computer move), you will receive a detailed Stockfish analysis including top moves, evaluations, and threats.
 - ALWAYS prioritize this provided analysis over your own chess knowledge. If Stockfish says a move is a blunder or identifies a threat, that is the absolute truth.
 - Use the evaluation numbers (e.g., +1.5, -0.8) to gauge how well the player is doing.
 
@@ -51,14 +46,12 @@ Move history: ${moveHistory}
 
 You have tools to interact with the chessboard:
 1. draw_arrow: Use this to point out specific moves, threats, or squares on the board.
-2. make_move: Use this to make moves on the board - REQUIRED when it's your turn as ${engineRole}.
-3. get_top_moves: Use this to analyze positions and find the best moves.
+2. get_top_moves: Use this to analyze positions and find the best moves.
+3. make_move: Use ONLY for demonstration purposes or to suggest a move to the player. The game's actual moves are handled automatically.
 
-IMPORTANT: You are not just coaching - you are also playing as ${engineRole}. When it's ${engineRole}'s turn to move, you MUST:
-1. Use get_top_moves to analyze the position
-2. Use make_move to execute the best move for ${engineRole}
-3. Briefly explain your move choice (1-2 sentences max)
-4. MANDATORY: Use draw_arrow to highlight the tactical reasoning (e.g., an attack, defense, or key square). NEVER just talk without drawing at least one arrow to illustrate your point.
+IMPORTANT: You are a COACH, not the player. The computer moves are handled by a separate engine. When it's your turn to speak, you MUST:
+1. Briefly explain the implications of the latest moves (1-2 sentences max).
+2. MANDATORY: Use draw_arrow to highlight the tactical reasoning (e.g., an attack, defense, or key square). NEVER just talk without drawing at least one arrow to illustrate your point.
 
 ARROW USAGE IS MANDATORY:
 - You must use draw_arrow for EVERY explanation. If you mention a piece or square, you MUST draw an arrow involving it.
@@ -83,7 +76,6 @@ CONCISENESS IS CRITICAL:
  */
 function createCoachTools(
     addArrow: (arrow: Arrow) => void,
-    makeMove: (from: string, to: string, promotion?: string) => boolean,
     getTopMoves: (fen: string, numMoves?: number, depth?: number) => Promise<MoveAnnotation[]>,
     getCurrentFen: () => string
 ) {
@@ -97,30 +89,6 @@ function createCoachTools(
                 const arrow: Arrow = { startSquare: from, endSquare: to, color: color || "green" };
                 addArrow(arrow);
                 return { status: "success" };
-            }
-        }),
-        // tool({
-        //     name: 'highlight_square',
-        //     description: 'Highlight a specific square on the board.',
-        //     parameters: HighlightSquareParameters,
-        //     strict: true,
-        //     execute: async ({ square, color }: z.infer<typeof HighlightSquareParameters>) => {
-        //         const arrow: Arrow = { startSquare: square, endSquare: square, color: color || "green" };
-        //         addArrow(arrow);
-        //         return { status: "success" };
-        //     }
-        // }),
-        tool({
-            name: 'make_move',
-            description: 'Make a move on the chessboard. Use this to demonstrate or suggest moves.',
-            parameters: MakeMoveParameters,
-            strict: true,
-            execute: async ({ from, to, promotion }: z.infer<typeof MakeMoveParameters>) => {
-                const success = makeMove(from, to, promotion);
-                return {
-                    status: success ? "success" : "failed",
-                    message: success ? `Move ${from} to ${to} executed successfully` : `Invalid move from ${from} to ${to}`
-                };
             }
         }),
         tool({
@@ -177,13 +145,14 @@ export function useCoachController() {
     const isConnected = connectionState === "connected";
     const isConnecting = connectionState === "connecting";
 
-    const { playerColor, addArrow, makeMove, getFen, getLastMove, getMoveHistory, game } = useBoardController();
+    const { playerColor, addArrow, makeMove, getFen, getLastMove, getMoveHistory, game, isGameOver, isThinking } = useBoardController();
 
     // Get actual values (not functions) so we can watch them in useEffect
     const fen = getFen();
     const lastMove = getLastMove();
     const moveHistory = getMoveHistory();
     const currentTurn = game.turn();
+    const gameOver = isGameOver();
 
     // Get stockfish context for analysis
     const { getTopMoves } = useStockfish();
@@ -367,7 +336,7 @@ export function useCoachController() {
                 const agent = new RealtimeAgent({
                     name: 'Zuggy',
                     instructions: createCoachInstructions(playerRole, engineRole, moveHistory, boardAscii),
-                    tools: createCoachTools(addArrow, makeMove, getTopMoves, getFen),
+                    tools: createCoachTools(addArrow, getTopMoves, getFen),
                 });
 
                 // Instantiate transport with the specific media stream and audio element
@@ -409,10 +378,10 @@ export function useCoachController() {
                             console.debug(`[Queue] Processing ${messageQueue.current.length} queued messages`);
                             while (messageQueue.current.length > 0) {
                                 const msg = messageQueue.current.shift();
-                                if (msg) {
-                                    console.debug("[Queue] Sending message:", msg);
-                                    sessionRef.current.sendMessage(msg);
-                                }
+                                if (!msg) continue;
+
+                                console.debug("[Queue] Sending message:", msg);
+                                sessionRef.current.sendMessage(msg);
                             }
                         }
                     }
@@ -528,7 +497,6 @@ export function useCoachController() {
             selectedOutputDeviceId,
             playerColor,
             addArrow,
-            makeMove,
             getTopMoves,
             getFen,
             connectionState,
@@ -566,49 +534,55 @@ export function useCoachController() {
     }, []);
 
     // Watch for moves and send updates to the coach
-    // Only send messages for player moves, not agent's own moves
+    // Turn-based coaching: Notify coach when it's the player's turn again (after engine move)
+    // or when the game is over.
     useEffect(() => {
         if (!isConnected) return;
 
         const handleMoveUpdate = async () => {
-            if (lastMove && lastMove !== lastProcessedMove.current) {
+            // We want to notify the coach in two cases:
+            // 1. It's the player's turn and a move was just made (by the engine)
+            // 2. The game is over
+            const isPlayersTurn = currentTurn === playerColor;
+            const shouldNotify = (isPlayersTurn && !isThinking && lastMove !== lastProcessedMove.current) || gameOver;
+
+            if (shouldNotify && lastMove) {
                 lastProcessedMove.current = lastMove;
 
-                // Check whose turn it is now
-                // If it's NOT the player's turn, that means the player just moved (should notify agent)
-                // If it IS the player's turn, that means the agent just moved (don't notify - agent knows its own move)
-                const isPlayersTurn = currentTurn === playerColor;
+                console.debug("[useCoachController] Turn complete or Game Over, notifying coach...");
 
-                if (!isPlayersTurn) {
-                    // Player just moved, notify the agent with Stockfish analysis
-                    const moveHistoryStr = moveHistory.map(m => m.san).join(" ");
-                    const boardAscii = game.ascii();
+                const moveHistoryStr = moveHistory.map((m: Move) => m.san).join(" ");
+                const boardAscii = game.ascii();
 
-                    // Get Stockfish analysis for the new position
-                    // We analyze from the agent's perspective (it's now the agent's turn to move or react)
-                    const analysis = await getTopMoves(fen, 3, 15);
-                    const analysisStr = analysis.map((m, i) => {
-                        const threatStr = m.threats.length > 0 
-                            ? `\n   - Threats: ${m.threats.map(t => `${t.from}->${t.to} (${t.piece})`).join(', ')}` 
-                            : '';
-                        const defenseStr = m.defends.length > 0 
-                            ? `\n   - Defenses: ${m.defends.map(d => `${d.from}->${d.to} (${d.piece})`).join(', ')}` 
-                            : '';
-                        return `${i + 1}. ${m.san} (Eval: ${m.evaluation}${m.mate ? `, Mate in ${m.mate}` : ''})${threatStr}${defenseStr}`;
-                    }).join('\n');
+                // Get Stockfish analysis for the current position (player's turn or game over)
+                const analysis = await getTopMoves(fen, 3, 15);
+                const analysisStr = analysis.map((m, i) => {
+                    const threatStr = m.threats.length > 0
+                        ? `\n   - Threats: ${m.threats.map(t => `${t.from}->${t.to} (${t.piece})`).join(', ')}`
+                        : '';
+                    const defenseStr = m.defends.length > 0
+                        ? `\n   - Defenses: ${m.defends.map(d => `${d.from}->${d.to} (${d.piece})`).join(', ')}`
+                        : '';
+                    return `${i + 1}. ${m.san} (Eval: ${m.evaluation}${m.mate ? `, Mate in ${m.mate}` : ''})${threatStr}${defenseStr}`;
+                }).join('\n');
 
-                    const updateMsg = `Player played: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nStockfish Analysis of current position:\n${analysisStr}\n\nUsing this analysis, briefly explain the implications of the player's move and the current state of the game. Use draw_arrow (RED for threats, BLUE for defenses, GREEN for your ideas) to visualize the specific piece interactions found by Stockfish.`;
-
-                    console.debug("[sendMessage] Player moved, sending update to agent with analysis", updateMsg);
-                    sendMessage(updateMsg);
+                let updateMsg = "";
+                if (gameOver) {
+                    const status = game.isCheckmate()
+                        ? (game.turn() === "w" ? "Black wins by checkmate!" : "White wins by checkmate!")
+                        : "The game is over (Draw/Stalemate).";
+                    updateMsg = `THE GAME IS OVER. ${status}\n\nFinal Board:\n${boardAscii}\n\nFinal History: ${moveHistoryStr}\n\nFinal Stockfish Analysis:\n${analysisStr}\n\nPlease provide a brief wrap-up of the game, highlighting the critical moments and why the game ended the way it did. Use draw_arrow to illustrate key points.`;
                 } else {
-                    console.debug("[sendMessage] Agent made its own move, skipping notification");
+                    updateMsg = `Turn complete. Last move: ${lastMove}.\n\nBoard:\n${boardAscii}\n\nHistory: ${moveHistoryStr}\n\nStockfish Analysis of current position:\n${analysisStr}\n\nUsing this analysis, briefly explain the current state of the game after the latest moves. Mention any significant changes in evaluation or new threats. Use draw_arrow (RED for threats, BLUE for defenses, GREEN for positional ideas) to visualize the specific piece interactions found by Stockfish.`;
                 }
+
+                console.debug("[sendMessage] Sending turn update to agent with analysis");
+                sendMessage(updateMsg);
             }
         };
 
         handleMoveUpdate();
-    }, [isConnected, lastMove, fen, moveHistory, game, currentTurn, playerColor, sendMessage, getTopMoves]);
+    }, [isConnected, lastMove, fen, moveHistory, game, currentTurn, playerColor, isThinking, gameOver, sendMessage, getTopMoves]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -618,7 +592,7 @@ export function useCoachController() {
     // Wrapper to initiate connection with device selection
     const initiateConnection = useCallback(async (overrides?: { fen: string, moveHistory: string, boardAscii: string }) => {
         // Get current board state or use overrides
-        const moveHistoryStr = overrides ? overrides.moveHistory : moveHistory.map(m => m.san).join(" ");
+        const moveHistoryStr = overrides ? overrides.moveHistory : moveHistory.map((m: Move) => m.san).join(" ");
         const boardAsciiStr = overrides ? overrides.boardAscii : game.ascii();
         const fenStr = overrides ? overrides.fen : fen;
 

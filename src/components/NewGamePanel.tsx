@@ -4,11 +4,9 @@ import { Button } from "@/components/ui/button";
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { useCoachController } from "@/hooks";
 
 interface NewGamePanelProps {
     isOpen: boolean;
@@ -21,16 +19,9 @@ export default function NewGamePanel({
     onClose,
     onStartGame,
 }: NewGamePanelProps) {
-    const { initiateConnection } = useCoachController();
-
     const handleColorSelect = async (asWhite: boolean) => {
         onStartGame(asWhite);
         onClose();
-
-        // Small delay to let the game state update, then initiate coach connection
-        setTimeout(() => {
-            initiateConnection();
-        }, 100);
     };
 
     return (
@@ -38,9 +29,6 @@ export default function NewGamePanel({
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle>Start New Game</DialogTitle>
-                    <DialogDescription>
-                        Choose your color to begin a new game
-                    </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-6 py-4">

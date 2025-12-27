@@ -3,14 +3,14 @@
 ## TODO
 - [ ] improve agent robustness and accuracy
     - [ ] consolidate message pattern
-    - [ ] maybe revert back to just using stockfish then use the agent to generate explanations and arrows?
 - [ ] load game from fen (or pgn)
 - [ ] improve QoL
     - [ ] add eval bar
     - [ ] allow undo move
     - [ ] highlight squares in transcript (on hover, highlight the square)
+    - [ ] update player transcript in real time
     - [ ] highlight most recent move on the board
-    - [ ] remove AI difficulty setting (configure agent to dynamically adjust difficulty mid game)
+    - [ ] allow configurable computer difficulty setting (later, we can adjust the difficulty based on the player's performance)
     - [ ] fix default color theme
         - [ ] add theme toggle
 - [ ] features
