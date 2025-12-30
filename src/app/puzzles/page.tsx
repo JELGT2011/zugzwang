@@ -6,13 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchAllPuzzles } from "@/lib/puzzles";
+import { useUserProfile } from "@/hooks/useUserProfile";
+import { fetchPuzzlesNearRating } from "@/lib/puzzles";
 import { usePuzzleStore } from "@/stores";
 import {
-    DIFFICULTY_RANGES,
     PUZZLE_THEMES,
     THEME_DISPLAY_NAMES,
-    type PuzzleDifficulty,
     type PuzzleTheme,
 } from "@/types/puzzle";
 import {
@@ -21,12 +20,14 @@ import {
     Filter,
     Flame,
     LogIn,
+    Play,
     Search,
     Sparkles,
     Star,
     TrendingUp,
     X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 // Popular themes to highlight
@@ -43,6 +44,7 @@ const POPULAR_THEMES: PuzzleTheme[] = [
 
 export default function PuzzlesPage() {
     const { user, loading: authLoading, signInWithGoogle } = useAuth();
+    const { profile, loading: profileLoading } = useUserProfile();
     const {
         puzzles,
         isLoading,
@@ -59,31 +61,56 @@ export default function PuzzlesPage() {
     } = usePuzzleStore();
 
     const [showFilters, setShowFilters] = useState(true);
+    const [loadingRandom, setLoadingRandom] = useState(false);
+    const router = useRouter();
 
-    // Load puzzles from Firestore when user is authenticated
+    const puzzleElo = profile?.elos?.puzzle;
+
+    // Load puzzles from Firestore near the player's puzzle ELO
     const loadPuzzles = useCallback(async () => {
-        if (!user) return;
+        if (!user || !puzzleElo) return;
 
         setLoading(true);
         setError(null);
 
         try {
-            const fetchedPuzzles = await fetchAllPuzzles({
-                sort: { field: "rating", direction: "asc" },
-                maxResults: 10, // Limit for performance
+            const result = await fetchPuzzlesNearRating(puzzleElo, {
+                range: 100, // ±200 from player's ELO
+                pageSize: 10,
             });
-            setPuzzles(fetchedPuzzles);
+            setPuzzles(result.puzzles);
         } catch (err) {
             console.error("Failed to load puzzles from Firestore:", err);
             setError("Failed to load puzzles. Please try again.");
         }
-    }, [user, setPuzzles, setLoading, setError]);
+    }, [user, puzzleElo, setPuzzles, setLoading, setError]);
 
     useEffect(() => {
-        if (user && puzzles.length === 0 && !isLoading) {
+        if (user && puzzleElo && puzzles.length === 0 && !isLoading) {
             loadPuzzles();
         }
-    }, [user, puzzles.length, isLoading, loadPuzzles]);
+    }, [user, puzzleElo, puzzles.length, isLoading, loadPuzzles]);
+
+    // Navigate to a random puzzle near the player's rating
+    const goToRandomPuzzle = useCallback(async () => {
+        if (!puzzleElo) return;
+
+        setLoadingRandom(true);
+        try {
+            const result = await fetchPuzzlesNearRating(puzzleElo, {
+                range: 100,
+                pageSize: 1,
+            });
+            if (result.puzzles.length > 0) {
+                const randomPuzzle = result.puzzles[Math.floor(Math.random() * result.puzzles.length)];
+                router.push(`/puzzles/${randomPuzzle.id}`);
+            }
+        } catch (err) {
+            console.error("Failed to fetch random puzzle:", err);
+        } finally {
+            setLoadingRandom(false);
+        }
+    }, [puzzleElo, router]);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const filteredPuzzles = useMemo(() => getFilteredPuzzles(), [getFilteredPuzzles, filters, sortOption, puzzles]);
@@ -108,16 +135,8 @@ export default function PuzzlesPage() {
         }
     };
 
-    const toggleDifficulty = (difficulty: PuzzleDifficulty) => {
-        if (filters.difficulty === difficulty) {
-            updateFilter("difficulty", undefined);
-        } else {
-            updateFilter("difficulty", difficulty);
-        }
-    };
-
-    // Show loading state while checking auth
-    if (authLoading) {
+    // Show loading state while checking auth or loading profile
+    if (authLoading || (user && profileLoading)) {
         return (
             <main className="py-8">
                 <div className="container mx-auto px-4">
@@ -210,9 +229,18 @@ export default function PuzzlesPage() {
                                 Chess Puzzles
                             </h1>
                             <p className="text-muted-foreground mt-2">
-                                Sharpen your tactical vision with over 5 million puzzles
+                                Sharpen your tactical vision with chess puzzles.
                             </p>
                         </div>
+                        <Button
+                            onClick={goToRandomPuzzle}
+                            disabled={loadingRandom || !puzzleElo}
+                            size="lg"
+                            className="gap-2"
+                        >
+                            <Play className="w-4 h-4" />
+                            {loadingRandom ? "Loading..." : "Random Puzzle"}
+                        </Button>
                     </div>
 
                     {/* Quick stats */}
@@ -247,32 +275,6 @@ export default function PuzzlesPage() {
                             </div>
 
                             <div className="space-y-6">
-                                {/* Difficulty */}
-                                <div>
-                                    <h3 className="text-sm font-medium mb-3 text-muted-foreground">Difficulty</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {(Object.entries(DIFFICULTY_RANGES) as [PuzzleDifficulty, typeof DIFFICULTY_RANGES[PuzzleDifficulty]][]).map(
-                                            ([key, value]) => (
-                                                <button
-                                                    key={key}
-                                                    onClick={() => toggleDifficulty(key)}
-                                                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${filters.difficulty === key
-                                                        ? "ring-2 ring-offset-2 ring-offset-background"
-                                                        : "opacity-70 hover:opacity-100"
-                                                        }`}
-                                                    style={{
-                                                        backgroundColor: `${value.color}20`,
-                                                        color: value.color,
-                                                        borderColor: value.color,
-                                                        ...(filters.difficulty === key && { ringColor: value.color }),
-                                                    }}
-                                                >
-                                                    {value.label}
-                                                </button>
-                                            )
-                                        )}
-                                    </div>
-                                </div>
 
                                 {/* Sort */}
                                 <div>

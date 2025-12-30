@@ -262,6 +262,35 @@ export async function fetchPuzzlesByDifficulty(
 }
 
 /**
+ * Fetch puzzles near a target rating (e.g., player's ELO)
+ * Returns puzzles within ±range of the target rating
+ */
+export async function fetchPuzzlesNearRating(
+  targetRating: number,
+  options: {
+    range?: number; // Rating range ± from target (default: 200)
+    filters?: Omit<PuzzleFilters, "minRating" | "maxRating" | "difficulty">;
+    sort?: PuzzleSortOption;
+    pageSize?: number;
+    lastDoc?: QueryDocumentSnapshot<DocumentData> | null;
+  } = {}
+): Promise<PuzzleQueryResult> {
+  const { range = 100, filters, ...rest } = options;
+
+  return fetchPuzzles({
+    ...rest,
+    filters: {
+      ...filters,
+      minRating: Math.max(0, targetRating - range),
+      maxRating: targetRating + range,
+    },
+    // Default sort by rating distance from target would be ideal,
+    // but Firestore doesn't support that, so we sort by rating ascending
+    sort: options.sort ?? { field: "rating", direction: "asc" },
+  });
+}
+
+/**
  * Get puzzle count (approximate - requires reading docs)
  * For accurate counts, consider using a counter document
  */
