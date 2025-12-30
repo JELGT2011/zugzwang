@@ -20,7 +20,7 @@ export async function Navbar() {
 
           <nav className="hidden md:flex items-center gap-1">
             <Link
-              href="/"
+              href="/play"
               className="px-4 py-2 rounded-md text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
             >
               Play

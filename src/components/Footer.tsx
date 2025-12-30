@@ -25,7 +25,7 @@ export function Footer() {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
                 <Link
-                  href="/"
+                  href="/play"
                   className="hover:text-primary transition-colors"
                 >
                   Play Chess
