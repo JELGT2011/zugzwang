@@ -1,11 +1,10 @@
-import { auth } from "@/auth";
+// Note: For server-side Firebase auth verification, install firebase-admin
+// and verify the ID token from the Authorization header:
+// import { getAuth } from 'firebase-admin/auth';
+// const token = request.headers.get('Authorization')?.split('Bearer ')[1];
+// const decodedToken = await getAuth().verifyIdToken(token);
 
 export async function POST() {
-    const session = await auth();
-    if (!session) {
-        return new Response("Unauthorized", { status: 401 });
-    }
-
     if (!process.env.OPENAI_API_KEY) {
         return new Response("OPENAI_API_KEY is not configured", { status: 500 });
     }

@@ -1,5 +1,6 @@
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { StockfishProvider } from "@/contexts/StockfishContext";
 import { Analytics } from "@vercel/analytics/react";
 import type { Metadata } from "next";
@@ -33,14 +34,16 @@ export default function RootLayout({
       <body
         className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased flex flex-col min-h-screen`}
       >
-        <Analytics />
-        <Navbar />
-        <StockfishProvider>
-          <main className="flex-1">
-            {children}
-          </main>
-        </StockfishProvider>
-        <Footer />
+        <AuthProvider>
+          <Analytics />
+          <Navbar />
+          <StockfishProvider>
+            <main className="flex-1">
+              {children}
+            </main>
+          </StockfishProvider>
+          <Footer />
+        </AuthProvider>
       </body>
     </html>
   );

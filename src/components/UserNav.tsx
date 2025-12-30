@@ -1,7 +1,7 @@
 "use client";
 
+import { useAuth } from "@/contexts/AuthContext";
 import { LogOut } from "lucide-react";
-import { signOut } from "next-auth/react";
 import Image from "next/image";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Button } from "./ui/button";
@@ -14,17 +14,13 @@ import {
     DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
-interface UserNavProps {
-    user: {
-        name?: string | null;
-        email?: string | null;
-        image?: string | null;
-    };
-}
+export function UserNav() {
+    const { user, signOut } = useAuth();
 
-export function UserNav({ user }: UserNavProps) {
-    const initials = user.name
-        ? user.name
+    if (!user) return null;
+
+    const initials = user.displayName
+        ? user.displayName
             .split(" ")
             .map((n) => n[0])
             .join("")
@@ -36,10 +32,10 @@ export function UserNav({ user }: UserNavProps) {
             <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                     <Avatar className="h-8 w-8">
-                        {user.image ? (
+                        {user.photoURL ? (
                             <Image
-                                src={user.image}
-                                alt={user.name ?? "User avatar"}
+                                src={user.photoURL}
+                                alt={user.displayName ?? "User avatar"}
                                 width={32}
                                 height={32}
                                 className="aspect-square size-full rounded-full"
@@ -53,7 +49,7 @@ export function UserNav({ user }: UserNavProps) {
             <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium leading-none">{user.name}</p>
+                        <p className="text-sm font-medium leading-none">{user.displayName}</p>
                         <p className="text-xs leading-none text-muted-foreground">
                             {user.email}
                         </p>

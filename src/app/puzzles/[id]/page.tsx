@@ -38,7 +38,7 @@ export default function PuzzlePage() {
     setPuzzles,
     getPuzzleById,
     startPuzzle,
-    useHint,
+    useHint: requestHint,
     showPuzzleSolution,
     resetPuzzle,
     nextPuzzle,
@@ -110,7 +110,7 @@ export default function PuzzlePage() {
   };
 
   const handleHint = () => {
-    const hintSquare = useHint();
+    const hintSquare = requestHint();
     if (hintSquare) {
       // The hint is handled by the PuzzleBoard component through the store
       console.log("Hint: Start from", hintSquare);
