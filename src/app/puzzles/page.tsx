@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchAllPuzzles } from "@/lib/puzzles";
 import { usePuzzleStore } from "@/stores";
 import {
     DIFFICULTY_RANGES,
@@ -18,13 +20,14 @@ import {
     ArrowUpAZ,
     Filter,
     Flame,
+    LogIn,
     Search,
     Sparkles,
     Star,
     TrendingUp,
     X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
 // Popular themes to highlight
 const POPULAR_THEMES: PuzzleTheme[] = [
@@ -39,39 +42,49 @@ const POPULAR_THEMES: PuzzleTheme[] = [
 ];
 
 export default function PuzzlesPage() {
+    const { user, loading: authLoading, signInWithGoogle } = useAuth();
     const {
         puzzles,
         isLoading,
+        error,
         filters,
         sortOption,
         updateFilter,
         clearFilters,
         setSortOption,
         setPuzzles,
+        setLoading,
+        setError,
         getFilteredPuzzles,
     } = usePuzzleStore();
 
     const [searchInput, setSearchInput] = useState("");
     const [showFilters, setShowFilters] = useState(true);
 
-    // Load puzzles on mount
-    useEffect(() => {
-        async function loadPuzzles() {
-            try {
-                const response = await fetch("/api/puzzles");
-                if (response.ok) {
-                    const data = await response.json();
-                    setPuzzles(data.puzzles || []);
-                }
-            } catch (error) {
-                console.error("Failed to load puzzles:", error);
-            }
+    // Load puzzles from Firestore when user is authenticated
+    const loadPuzzles = useCallback(async () => {
+        if (!user) return;
+        
+        setLoading(true);
+        setError(null);
+        
+        try {
+            const fetchedPuzzles = await fetchAllPuzzles({
+                sort: { field: "rating", direction: "asc" },
+                maxResults: 100, // Limit for performance
+            });
+            setPuzzles(fetchedPuzzles);
+        } catch (err) {
+            console.error("Failed to load puzzles from Firestore:", err);
+            setError("Failed to load puzzles. Please try again.");
         }
+    }, [user, setPuzzles, setLoading, setError]);
 
-        if (puzzles.length === 0) {
+    useEffect(() => {
+        if (user && puzzles.length === 0 && !isLoading) {
             loadPuzzles();
         }
-    }, [puzzles.length, setPuzzles]);
+    }, [user, puzzles.length, isLoading, loadPuzzles]);
 
     // Debounced search
     useEffect(() => {
@@ -81,6 +94,7 @@ export default function PuzzlesPage() {
         return () => clearTimeout(timeout);
     }, [searchInput, updateFilter]);
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     const filteredPuzzles = useMemo(() => getFilteredPuzzles(), [getFilteredPuzzles, filters, sortOption, puzzles]);
 
     const activeFilterCount = useMemo(() => {
@@ -111,6 +125,47 @@ export default function PuzzlesPage() {
         }
     };
 
+    // Show loading state while checking auth
+    if (authLoading) {
+        return (
+            <main className="py-8">
+                <div className="container mx-auto px-4">
+                    <div className="flex items-center justify-center min-h-[60vh]">
+                        <div className="text-center space-y-4">
+                            <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto" />
+                            <p className="text-muted-foreground">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        );
+    }
+
+    // Show sign-in prompt if not authenticated
+    if (!user) {
+        return (
+            <main className="py-8">
+                <div className="container mx-auto px-4">
+                    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
+                        <div className="w-20 h-20 rounded-full bg-muted/50 flex items-center justify-center">
+                            <LogIn className="w-10 h-10 text-muted-foreground" />
+                        </div>
+                        <div className="text-center space-y-2">
+                            <h2 className="text-2xl font-semibold">Sign In Required</h2>
+                            <p className="text-muted-foreground max-w-md">
+                                Sign in to access our collection of chess puzzles from the Lichess database.
+                            </p>
+                        </div>
+                        <Button onClick={signInWithGoogle} size="lg" className="gap-2">
+                            <LogIn className="w-4 h-4" />
+                            Sign in with Google
+                        </Button>
+                    </div>
+                </div>
+            </main>
+        );
+    }
+
     if (isLoading) {
         return (
             <main className="py-8">
@@ -120,6 +175,25 @@ export default function PuzzlesPage() {
                             <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto" />
                             <p className="text-muted-foreground">Loading puzzles...</p>
                         </div>
+                    </div>
+                </div>
+            </main>
+        );
+    }
+
+    if (error) {
+        return (
+            <main className="py-8">
+                <div className="container mx-auto px-4">
+                    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+                        <div className="w-16 h-16 rounded-full bg-destructive/20 flex items-center justify-center">
+                            <X className="w-8 h-8 text-destructive" />
+                        </div>
+                        <h2 className="text-xl font-semibold">Error Loading Puzzles</h2>
+                        <p className="text-muted-foreground">{error}</p>
+                        <Button onClick={loadPuzzles} variant="outline">
+                            Try Again
+                        </Button>
                     </div>
                 </div>
             </main>
@@ -145,7 +219,7 @@ export default function PuzzlesPage() {
                                 Chess Puzzles
                             </h1>
                             <p className="text-muted-foreground mt-2">
-                                Sharpen your tactical vision with {puzzles.length.toLocaleString()} curated puzzles
+                                Sharpen your tactical vision with over 5 million puzzles
                             </p>
                         </div>
 

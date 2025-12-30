@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Puzzles collection - authenticated read only, no client writes
+    // Writes are handled via Firebase Admin SDK (server-side only)
+    match /puzzles/{puzzleId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Default deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -42,3 +42,8 @@ next-env.d.ts
 
 # data
 data/
+
+# firebase
+*.log
+serviceAccountKey.json
+*-serviceAccountKey.json

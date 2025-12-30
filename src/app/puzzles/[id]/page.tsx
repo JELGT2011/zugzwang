@@ -4,30 +4,35 @@ import PuzzleBoard from "@/components/PuzzleBoard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchPuzzleById, fetchAllPuzzles } from "@/lib/puzzles";
 import { usePuzzleStore } from "@/stores";
 import {
   getDifficultyFromRating,
   DIFFICULTY_RANGES,
   THEME_DISPLAY_NAMES,
   type PuzzleTheme,
+  type Puzzle,
 } from "@/types/puzzle";
 import {
   ArrowLeft,
   ArrowRight,
   ExternalLink,
   Lightbulb,
+  LogIn,
   RotateCcw,
   Trophy,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 export default function PuzzlePage() {
   const params = useParams();
   const router = useRouter();
   const puzzleId = params.id as string;
+  const { user, loading: authLoading, signInWithGoogle } = useAuth();
 
   const {
     puzzles,
@@ -44,38 +49,131 @@ export default function PuzzlePage() {
     nextPuzzle,
   } = usePuzzleStore();
 
-  // Load puzzles if not loaded
-  useEffect(() => {
-    async function loadPuzzles() {
-      try {
-        const response = await fetch("/api/puzzles");
-        if (response.ok) {
-          const data = await response.json();
-          setPuzzles(data.puzzles || []);
-        }
-      } catch (error) {
-        console.error("Failed to load puzzles:", error);
-      }
-    }
+  const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-    if (puzzles.length === 0) {
-      loadPuzzles();
+  // Load single puzzle from Firestore
+  const loadPuzzle = useCallback(async () => {
+    if (!user || !puzzleId) return;
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      // First check if we already have it in the store
+      const existingPuzzle = getPuzzleById(puzzleId);
+      if (existingPuzzle) {
+        setPuzzle(existingPuzzle);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch from Firestore
+      const fetchedPuzzle = await fetchPuzzleById(puzzleId);
+      if (fetchedPuzzle) {
+        setPuzzle(fetchedPuzzle);
+        // Also add to store for navigation
+        if (!puzzles.some(p => p.id === fetchedPuzzle.id)) {
+          setPuzzles([...puzzles, fetchedPuzzle]);
+        }
+      } else {
+        setError("Puzzle not found");
+      }
+    } catch (err) {
+      console.error("Failed to load puzzle:", err);
+      setError("Failed to load puzzle");
+    } finally {
+      setLoading(false);
     }
-  }, [puzzles.length, setPuzzles]);
+  }, [user, puzzleId, getPuzzleById, puzzles, setPuzzles]);
+
+  // Load puzzles for navigation if not loaded
+  const loadPuzzlesForNavigation = useCallback(async () => {
+    if (!user || puzzles.length > 0) return;
+
+    try {
+      const fetchedPuzzles = await fetchAllPuzzles({
+        sort: { field: "rating", direction: "asc" },
+        maxResults: 500,
+      });
+      setPuzzles(fetchedPuzzles);
+    } catch (err) {
+      console.error("Failed to load puzzles for navigation:", err);
+    }
+  }, [user, puzzles.length, setPuzzles]);
+
+  useEffect(() => {
+    if (user) {
+      loadPuzzle();
+      loadPuzzlesForNavigation();
+    }
+  }, [user, loadPuzzle, loadPuzzlesForNavigation]);
 
   // Start puzzle when puzzle data is available
   useEffect(() => {
-    if (puzzles.length > 0 && puzzleId) {
-      const puzzle = getPuzzleById(puzzleId);
-      if (puzzle && (!currentPuzzle || currentPuzzle.id !== puzzleId)) {
-        startPuzzle(puzzle);
-      }
+    if (puzzle && (!currentPuzzle || currentPuzzle.id !== puzzle.id)) {
+      startPuzzle(puzzle);
     }
-  }, [puzzles, puzzleId, getPuzzleById, startPuzzle, currentPuzzle]);
+  }, [puzzle, currentPuzzle, startPuzzle]);
 
-  const puzzle = getPuzzleById(puzzleId);
+  // Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <main className="py-8">
+        <div className="container mx-auto px-4">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center space-y-4">
+              <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto" />
+              <p className="text-muted-foreground">Loading...</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
-  if (!puzzle) {
+  // Show sign-in prompt if not authenticated
+  if (!user) {
+    return (
+      <main className="py-8">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
+            <div className="w-20 h-20 rounded-full bg-muted/50 flex items-center justify-center">
+              <LogIn className="w-10 h-10 text-muted-foreground" />
+            </div>
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-semibold">Sign In Required</h2>
+              <p className="text-muted-foreground max-w-md">
+                Sign in to access chess puzzles.
+              </p>
+            </div>
+            <Button onClick={signInWithGoogle} size="lg" className="gap-2">
+              <LogIn className="w-4 h-4" />
+              Sign in with Google
+            </Button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <main className="py-8">
+        <div className="container mx-auto px-4">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center space-y-4">
+              <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto" />
+              <p className="text-muted-foreground">Loading puzzle...</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error || !puzzle) {
     return (
       <main className="py-8 min-h-screen">
         <div className="container mx-auto px-4">
@@ -85,7 +183,7 @@ export default function PuzzlePage() {
             </div>
             <h2 className="text-xl font-semibold">Puzzle Not Found</h2>
             <p className="text-muted-foreground">
-              The puzzle you&apos;re looking for doesn&apos;t exist.
+              {error || "The puzzle you're looking for doesn't exist."}
             </p>
             <Link href="/puzzles">
               <Button variant="outline">
@@ -303,4 +401,3 @@ export default function PuzzlePage() {
     </main>
   );
 }
-

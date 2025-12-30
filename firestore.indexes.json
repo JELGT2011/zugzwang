@@ -1,0 +1,45 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "puzzles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rating", "order": "ASCENDING" },
+        { "fieldPath": "popularity", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "puzzles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rating", "order": "ASCENDING" },
+        { "fieldPath": "nbPlays", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "puzzles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "themes", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "rating", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "puzzles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "themes", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "popularity", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "puzzles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "themes", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "nbPlays", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
