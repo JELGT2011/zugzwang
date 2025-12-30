@@ -1,3 +1,4 @@
+import { AppShell } from "@/components/AppShell";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -38,9 +39,11 @@ export default function RootLayout({
           <Analytics />
           <Navbar />
           <StockfishProvider>
-            <main className="flex-1">
-              {children}
-            </main>
+            <AppShell>
+              <main className="flex-1">
+                {children}
+              </main>
+            </AppShell>
           </StockfishProvider>
           <Footer />
         </AuthProvider>

@@ -2,6 +2,11 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // User profiles - users can only read/write their own profile
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Puzzles collection - authenticated read only, no client writes
     // Writes are handled via Firebase Admin SDK (server-side only)
     match /puzzles/{puzzleId} {
