@@ -46,7 +46,6 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
     currentMoveIndex,
     puzzleStatus,
     showSolution,
-    hintsUsed,
     makeMove: storeMakeMove,
     advanceMoveIndex,
   } = usePuzzleStore();
@@ -122,21 +121,9 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
     setIsAnimating(false);
   }, [puzzle.moves, advanceMoveIndex]);
 
-  // Derive hint highlight squares from state (no effect needed)
-  const hintHighlightSquares = useMemo(() => {
-    if (hintsUsed > 0 && puzzleStatus === "playing" && currentMoveIndex < puzzle.moves.length) {
-      const expectedMove = puzzle.moves[currentMoveIndex];
-      const fromSquare = expectedMove.slice(0, 2);
-      
-      return {
-        [fromSquare]: { 
-          backgroundColor: "rgba(69, 133, 136, 0.6)",
-          boxShadow: "inset 0 0 0 3px rgba(69, 133, 136, 0.8)",
-        },
-      };
-    }
-    return {};
-  }, [hintsUsed, puzzleStatus, currentMoveIndex, puzzle.moves]);
+  // Note: We intentionally don't auto-highlight the piece to move based on hints.
+  // The coach should provide verbal/textual hints and use arrows sparingly.
+  // Auto-highlighting the solution piece would give away too much.
 
   // Derive solution arrows from state (no effect needed)
   const arrows = useMemo(() => {
@@ -248,8 +235,8 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
 
   // Combine square styles
   const squareStyles = useMemo(() => {
-    return { ...lastMoveSquares, ...hintHighlightSquares, ...moveHighlightSquares };
-  }, [lastMoveSquares, hintHighlightSquares, moveHighlightSquares]);
+    return { ...lastMoveSquares, ...moveHighlightSquares };
+  }, [lastMoveSquares, moveHighlightSquares]);
 
   // Get status text
   const statusText = useMemo(() => {
@@ -300,12 +287,6 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
         >
           {statusText}
         </Badge>
-        
-        {puzzleStatus === "playing" && (
-          <Badge variant="secondary" className="px-3 py-1 text-xs">
-            Move {Math.ceil(currentMoveIndex / 2)} of {Math.ceil((puzzle.moves.length - 1) / 2)}
-          </Badge>
-        )}
       </div>
     </div>
   );

@@ -2,10 +2,10 @@
 
 import AudioDeviceModal from "@/components/AudioDeviceModal";
 import PuzzleBoard from "@/components/PuzzleBoard";
+import { TranscriptView } from "@/components/TranscriptView";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePuzzleAgentController, usePuzzleSession } from "@/hooks/usePuzzleAgentController";
 import { useRandomPuzzle } from "@/hooks/useRandomPuzzle";
@@ -417,35 +417,12 @@ export default function PuzzlePage() {
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xs font-medium text-primary">Coach</span>
                 </div>
-                <ScrollArea className="max-h-32">
-                  <div className="space-y-2">
-                    {transcriptHistory.length === 0 && !transcript ? (
-                      <p className="text-sm text-muted-foreground italic">
-                        Tap the lightbulb for a hint
-                      </p>
-                    ) : (
-                      <>
-                        {transcriptHistory.map((msg, idx) => (
-                          <div
-                            key={idx}
-                            className={`text-sm ${msg.role === "user" ? "text-muted-foreground" : "text-foreground"}`}
-                          >
-                            <span className={`mr-1 font-medium ${msg.role === "user" ? "text-foreground" : "text-primary"}`}>
-                              {msg.role === "user" ? "You:" : "Zuggy:"}
-                            </span>
-                            {msg.content}
-                          </div>
-                        ))}
-                        {transcript && (
-                          <div className="text-sm text-foreground">
-                            <span className="text-primary mr-1 font-medium">Zuggy:</span>
-                            {transcript}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </ScrollArea>
+                <TranscriptView
+                  transcriptHistory={transcriptHistory}
+                  transcript={transcript}
+                  emptyMessage="Tap the lightbulb for a hint"
+                  className="max-h-32"
+                />
 
                 {/* Floating Action Buttons */}
                 <div className="absolute bottom-2 right-2 flex items-center gap-2">

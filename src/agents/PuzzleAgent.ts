@@ -8,7 +8,7 @@ import { ARROW_ANNOTATION, BREVITY } from "./sharedInstructions";
 const DrawArrowParameters = z.object({
     from: z.string().describe('The starting square (e.g., "e2").'),
     to: z.string().describe('The ending square (e.g., "e4").'),
-    color: z.string().optional().describe('The color of the arrow (e.g., "red", "blue", "green"). Defaults to green.')
+    color: z.string().default("green").describe('The color of the arrow: "red" for threats, "green" for focus areas, "blue" for defensive ideas.')
 });
 
 /**
@@ -59,12 +59,12 @@ export function createPuzzleAgentInstructions(params: {
     boardAscii: string;
     themes: PuzzleTheme[];
     hintsUsed: number;
-    moveNumber: number;
-    totalMoves: number;
     playerColor: string;
     tacticalContext: PuzzleTacticalContext;
+    solutionMove: string; // The correct move in UCI format (e.g., "e2e4", "g1f3")
+    solutionMoveReadable: string; // Human-readable (e.g., "knight from g1 to f3")
 }): string {
-    const { boardAscii, themes, hintsUsed, moveNumber, totalMoves, playerColor, tacticalContext } = params;
+    const { boardAscii, themes, hintsUsed, playerColor, tacticalContext, solutionMove, solutionMoveReadable } = params;
 
     // Format themes for the prompt
     const themeDescriptions = themes
@@ -79,8 +79,7 @@ export function createPuzzleAgentInstructions(params: {
     if (hintsUsed === 0) {
         hintDepthInstruction = `
 HINT DEPTH - FIRST HINT (very subtle):
-- Ask ONE short question to get them thinking (e.g., "What's the most forcing move type?")
-- Do NOT mention themes, specific pieces, or draw arrows yet`;
+- Ask ONE short question to get them thinking and pointed in the right direction.`;
     } else if (hintsUsed === 1) {
         hintDepthInstruction = `
 HINT DEPTH - SECOND HINT (directional):
@@ -107,14 +106,22 @@ ${ARROW_ANNOTATION}
 
 PUZZLE CONTEXT:
 - Theme(s): ${themeDescriptions || "Not specified"}
-- Move ${moveNumber} of ${totalMoves} to solve
 - Hints already used: ${hintsUsed}
 
 Current Board:
 ${boardAscii}
 
-POSITION ANALYSIS (use this to understand WHY the solution works - keep this secret!):
+THE CORRECT SOLUTION (TOP SECRET - NEVER REVEAL DIRECTLY):
+Move: ${solutionMove} (${solutionMoveReadable})
+
+POSITION ANALYSIS (why the solution works):
 ${tacticalSummary}
+
+YOUR APPROACH - WORK BACKWARDS FROM THE SOLUTION:
+You know the answer. Your job is to craft hints that lead the player to discover it themselves.
+1. Understand WHY the solution move is correct (what does it threaten? what does it attack?)
+2. Guide them toward noticing the key features that make this move work
+3. Each hint should point toward THIS SPECIFIC SOLUTION, not just general tactics
 
 PUZZLE-SOLVING CONCEPTS (reference these when relevant):
 - Checks first, then captures, then threats
@@ -122,15 +129,14 @@ PUZZLE-SOLVING CONCEPTS (reference these when relevant):
 - Forks attack two pieces at once
 - Forcing moves limit opponent options
 
-YOUR ROLE: Guide through short questions. Use arrows to show, don't tell. Let them discover the answer.
-
 ${hintDepthInstruction}
 
 PUZZLE HINT RULES:
 1. NEVER reveal the exact move (e.g., "Nf7" or "knight to f7")
 2. NEVER give away both the piece AND the target square together
-3. Use arrows to show, don't tell
-4. Be warm and encouraging
+3. All hints MUST point toward the correct solution, not random tactics
+4. Use arrows to show relevant features, but don't draw the solution move directly
+5. Be warm and encouraging
 `;
 }
 
@@ -189,9 +195,8 @@ export function createPuzzleAgentTools(addArrow: (arrow: Arrow) => void) {
             name: 'draw_arrow',
             description: 'Draw an arrow on the chessboard to guide the player. Use "red" for threats and danger, "green" for areas to focus on, and "blue" for defensive ideas. Be careful not to give away the exact move!',
             parameters: DrawArrowParameters,
-            strict: true,
             execute: async ({ from, to, color }: z.infer<typeof DrawArrowParameters>) => {
-                const arrow: Arrow = { startSquare: from, endSquare: to, color: color || "green" };
+                const arrow: Arrow = { startSquare: from, endSquare: to, color };
                 addArrow(arrow);
                 return { status: "success" };
             }

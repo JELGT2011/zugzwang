@@ -178,10 +178,32 @@ interface PuzzleAgentContext {
     boardAscii: string;
     themes: PuzzleTheme[];
     hintsUsed: number;
-    moveNumber: number;
-    totalMoves: number;
     playerColor: string;
     tacticalContext: PuzzleTacticalContext;
+    solutionMove: string;
+    solutionMoveReadable: string;
+}
+
+/**
+ * Convert a UCI move to human-readable format
+ */
+function uciToReadable(uci: string, game: Chess): string {
+    const from = uci.slice(0, 2) as Square;
+    const to = uci.slice(2, 4);
+    const promotion = uci.length > 4 ? uci[4] : undefined;
+    
+    const piece = game.get(from);
+    if (!piece) return `move from ${from} to ${to}`;
+    
+    const pieceName = PIECE_NAMES[piece.type];
+    let readable = `${pieceName} from ${from} to ${to}`;
+    
+    if (promotion) {
+        const promoName = PIECE_NAMES[promotion as PieceSymbol] || promotion;
+        readable += ` promoting to ${promoName}`;
+    }
+    
+    return readable;
 }
 
 /**
@@ -406,12 +428,18 @@ export function usePuzzleAgentController() {
                     }
                     if (event.type === "response.done") {
                         puzzleSessionState.isResponseActive = false;
-                        // Process queued messages
-                        if (puzzleSessionState.messageQueue.length > 0 && puzzleSessionState.session) {
-                            while (puzzleSessionState.messageQueue.length > 0) {
-                                const msg = puzzleSessionState.messageQueue.shift();
-                                if (msg) puzzleSessionState.session.sendMessage(msg);
-                            }
+                        // Process ONE queued message at a time, with a delay to avoid race conditions
+                        // The server may not be fully ready immediately after response.done
+                        if (puzzleSessionState.messageQueue.length > 0) {
+                            setTimeout(() => {
+                                if (puzzleSessionState.session && !puzzleSessionState.isResponseActive) {
+                                    const msg = puzzleSessionState.messageQueue.shift();
+                                    if (msg) {
+                                        puzzleSessionState.isResponseActive = true;
+                                        puzzleSessionState.session.sendMessage(msg);
+                                    }
+                                }
+                            }, 200); // Small delay to let server fully finish
                         }
                     }
                     if (event.type === "response.done" && event.response?.status === "failed") {
@@ -448,7 +476,13 @@ export function usePuzzleAgentController() {
                 });
 
                 session.on("error", (err: unknown) => {
-                    console.error("Puzzle session error:", err);
+                    // Log the full error structure
+                    console.error("Puzzle session error (full):", JSON.stringify(err, null, 2));
+                    console.error("Queue state at error:", {
+                        queueLength: puzzleSessionState.messageQueue.length,
+                        isResponseActive: puzzleSessionState.isResponseActive,
+                        lastProcessedMoveIndex: puzzleSessionState.lastProcessedMoveIndex,
+                    });
                     cleanupSession();
                 });
 
@@ -460,6 +494,10 @@ export function usePuzzleAgentController() {
                 await Promise.race([connectPromise, timeoutPromise]);
 
                 if (puzzleSessionState.session === session) {
+                    // Initialize lastProcessedMoveIndex to prevent usePuzzleSession 
+                    // from immediately sending a position update when connection is established
+                    puzzleSessionState.lastProcessedMoveIndex = usePuzzleStore.getState().currentMoveIndex;
+                    
                     setConnectionState("connected");
                     if (puzzleSessionState.audioElement?.paused) {
                         try {
@@ -499,8 +537,12 @@ export function usePuzzleAgentController() {
         }
 
         if (puzzleSessionState.isResponseActive) {
+            console.debug("[Puzzle Agent] Response active, queueing message");
             puzzleSessionState.messageQueue.push(message);
         } else {
+            console.debug("[Puzzle Agent] Sending message immediately");
+            // Set active immediately to prevent race conditions
+            puzzleSessionState.isResponseActive = true;
             puzzleSessionState.session.sendMessage(message);
         }
     }, []);
@@ -524,14 +566,20 @@ export function usePuzzleAgentController() {
     const requestHint = useCallback(async () => {
         if (!currentPuzzle || !currentGameState) return;
 
+        // Get the current correct move from the solution
+        const solutionMove = currentPuzzle.moves[currentMoveIndex] || '';
+        const solutionMoveReadable = solutionMove 
+            ? uciToReadable(solutionMove, currentGameState.game)
+            : 'unknown';
+
         const context: PuzzleAgentContext = {
             boardAscii: currentGameState.ascii,
             themes: currentPuzzle.themes as PuzzleTheme[],
             hintsUsed,
-            moveNumber: Math.ceil(currentMoveIndex / 2),
-            totalMoves: Math.ceil((currentPuzzle.moves.length - 1) / 2),
             playerColor: currentGameState.turn === 'w' ? 'White' : 'Black',
             tacticalContext: currentGameState.tacticalContext,
+            solutionMove,
+            solutionMoveReadable,
         };
 
         if (!isConnected) {
@@ -667,6 +715,8 @@ export function usePuzzleSession() {
             puzzleSessionState.messageQueue.push(message);
         } else {
             console.debug("[PuzzleSession] Sending message immediately");
+            // Set active immediately to prevent race conditions
+            puzzleSessionState.isResponseActive = true;
             puzzleSessionState.session.sendMessage(message);
         }
     }, []);
@@ -686,10 +736,14 @@ export function usePuzzleSession() {
 
         console.debug("[PuzzleSession] Position changed, updating agent...", { currentMoveIndex });
 
-        const { ascii: boardAscii, turn, tacticalContext } = currentGameState;
+        const { ascii: boardAscii, turn, tacticalContext, game } = currentGameState;
         const playerColor = turn === 'w' ? 'White' : 'Black';
-        const moveNumber = Math.ceil(currentMoveIndex / 2);
-        const totalMoves = Math.ceil((currentPuzzle.moves.length - 1) / 2);
+
+        // Get the current correct move from the solution
+        const solutionMove = currentPuzzle.moves[currentMoveIndex] || '';
+        const solutionMoveReadable = solutionMove 
+            ? uciToReadable(solutionMove, game)
+            : 'unknown';
 
         // Format tactical context for the agent
         const tacticalSummary: string[] = [];
@@ -722,19 +776,22 @@ export function usePuzzleSession() {
             tacticalSummary.push(`Notes: ${tacticalContext.notes.join(', ')}`);
         }
 
-        const updateMsg = `[SYSTEM: Position updated. Move ${moveNumber}/${totalMoves}. ${playerColor} to move.
+        const updateMsg = `[SYSTEM: Position updated. ${playerColor} to move.
 
 Board:
 ${boardAscii}
 
-Tactical Analysis:
+THE CORRECT SOLUTION (TOP SECRET - NEVER REVEAL):
+Move: ${solutionMove} (${solutionMoveReadable})
+
+Tactical Analysis (why this move works):
 ${tacticalSummary.length > 0 ? tacticalSummary.join('\n') : 'No immediate tactical features detected.'}
 
 Material balance: ${tacticalContext.materialBalance > 0 ? `White +${tacticalContext.materialBalance}` : tacticalContext.materialBalance < 0 ? `Black +${Math.abs(tacticalContext.materialBalance)}` : 'Equal'}
 
 Themes for this puzzle: ${currentPuzzle.themes.join(', ')}
 
-If the user asks for help, provide guidance based on the tactical analysis. Use draw_arrow to visualize key squares. Do NOT reveal the exact move unless they explicitly ask for the solution.]`;
+IMPORTANT: Work backwards from the solution. All hints must point toward THIS SPECIFIC MOVE. Do NOT suggest other moves or general tactics that don't lead to the solution.]`;
 
         sendMessage(updateMsg);
         isProcessingRef.current = false;

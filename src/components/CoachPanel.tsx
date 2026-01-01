@@ -1,13 +1,13 @@
 "use client";
 
 import AudioDeviceModal from "@/components/AudioDeviceModal";
+import { TranscriptView } from "@/components/TranscriptView";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useCoachController, useCoachSession } from "@/hooks";
 import { Loader2, Mic, MicOff, Settings, Square } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 
 // CoachPanel handles the coach UI and session lifecycle
 export default function CoachPanel() {
@@ -37,9 +37,6 @@ export default function CoachPanel() {
     // Coach session - ONLY called here (handles move-watching and cleanup)
     useCoachSession();
 
-    const scrollAreaRef = useRef<HTMLDivElement>(null);
-    const scrollBottomRef = useRef<HTMLDivElement>(null);
-
     useEffect(() => {
         refreshDevices();
         navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
@@ -56,16 +53,6 @@ export default function CoachPanel() {
             initiateConnection();
         }
     }, [isConnected, cleanupSession, initiateConnection]);
-
-    // Auto-scroll to bottom whenever messages change
-    useEffect(() => {
-        if (scrollBottomRef.current) {
-            // Use setTimeout to ensure DOM has fully updated
-            setTimeout(() => {
-                scrollBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-            }, 0);
-        }
-    }, [transcriptHistory, transcript]);
 
     return (
         <Card className="flex flex-col flex-1 h-full min-h-0 bg-card border-border overflow-hidden gap-0 py-0">
@@ -131,59 +118,31 @@ export default function CoachPanel() {
             </CardHeader>
 
             <div className="relative flex-1 min-h-0">
-                <ScrollArea className="h-full" ref={scrollAreaRef}>
-                    <CardContent className="p-4 pb-16 font-sans text-sm leading-relaxed">
-                        {!isConnected && !isConnecting ? (
-                            <div className="flex flex-col items-center justify-center py-8 gap-2">
-                                <p className="text-muted-foreground italic text-center text-sm">
-                                    Click Connect to start the AI coach.
-                                </p>
-                            </div>
-                        ) : isConnecting ? (
-                            <div className="flex flex-col items-center justify-center py-8 gap-2">
-                                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                                <p className="text-muted-foreground italic text-center text-sm">
-                                    Connecting to coach...
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {/* Transcript History */}
-                                {transcriptHistory.length === 0 && !transcript ? (
-                                    <div className="text-muted-foreground italic text-sm py-4">
-                                        {isMicMuted 
-                                            ? "Connected. Make a move or tap the mic to speak."
-                                            : "Listening... (speak or make a move)"}
-                                    </div>
-                                ) : (
-                                    <>
-                                        {transcriptHistory.map((msg, idx) => (
-                                            <div
-                                                key={idx}
-                                                className={`${msg.role === "user" ? "text-muted-foreground" : "text-foreground"}`}
-                                            >
-                                                <span className={`mr-2 font-bold ${msg.role === "user" ? "text-foreground" : "text-primary"}`}>
-                                                    {msg.role === "user" ? "You:" : "Zuggy:"}
-                                                </span>
-                                                {msg.content}
-                                            </div>
-                                        ))}
-
-                                        {/* Current active transcript (being spoken now) */}
-                                        {transcript && (
-                                            <div className="text-foreground">
-                                                <span className="text-primary mr-2 font-bold">Zuggy:</span>
-                                                {transcript}
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                                {/* Invisible element to scroll to */}
-                                <div ref={scrollBottomRef} />
-                            </div>
-                        )}
-                    </CardContent>
-                </ScrollArea>
+                <CardContent className="h-full p-4 pb-16 font-sans text-sm leading-relaxed">
+                    {!isConnected && !isConnecting ? (
+                        <div className="flex flex-col items-center justify-center py-8 gap-2">
+                            <p className="text-muted-foreground italic text-center text-sm">
+                                Click Connect to start the AI coach.
+                            </p>
+                        </div>
+                    ) : isConnecting ? (
+                        <div className="flex flex-col items-center justify-center py-8 gap-2">
+                            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                            <p className="text-muted-foreground italic text-center text-sm">
+                                Connecting to coach...
+                            </p>
+                        </div>
+                    ) : (
+                        <TranscriptView
+                            transcriptHistory={transcriptHistory}
+                            transcript={transcript}
+                            emptyMessage={isMicMuted 
+                                ? "Connected. Make a move or tap the mic to speak."
+                                : "Listening... (speak or make a move)"}
+                            className="h-full"
+                        />
+                    )}
+                </CardContent>
 
                 {/* Floating Transcribe/Stop Button */}
                 {isConnected && (
