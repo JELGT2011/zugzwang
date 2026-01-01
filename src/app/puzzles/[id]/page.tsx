@@ -493,12 +493,11 @@ export default function PuzzlePage() {
               <div className="flex flex-col gap-2">
                 <Button
                   onClick={() => {
-                    // Reset local state before navigating
-                    // Note: Don't call cleanupSession() - we'll reuse the WebRTC connection
-                    // via agent handoff when the new puzzle loads
+                    // Reset visual state before navigating
+                    // Note: Don't reset eloRecordedForPuzzleRef here - it will cause
+                    // the ELO recording effect to re-run and set eloResult again.
+                    // The puzzleId effect will handle resetting refs when URL changes.
                     setEloResult(null);
-                    eloRecordedForPuzzleRef.current = null;
-                    autoHintTriggeredRef.current = null;
                     clearArrows();
                     clearHistory();
                     goToRandomPuzzle();
@@ -522,6 +521,9 @@ export default function PuzzlePage() {
                   variant="outline"
                   onClick={() => {
                     // Reset for retry - keep WebRTC connection, just clear visuals
+                    // Hide puzzle details card but don't reset eloRecordedForPuzzleRef
+                    // so ELO isn't recorded again for the same puzzle
+                    setEloResult(null);
                     autoHintTriggeredRef.current = null; // Reset so auto-hint triggers again
                     clearArrows();
                     clearHistory();
