@@ -1,6 +1,8 @@
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   Timestamp,
@@ -85,4 +87,41 @@ export async function updateUserElo(
     [`elos.${category}`]: newElo,
     updatedAt: Timestamp.now(),
   });
+}
+
+/**
+ * Mark a puzzle as attempted by a user
+ * Stores the puzzle ID in a subcollection: users/{userId}/attemptedPuzzles/{puzzleId}
+ */
+export async function markPuzzleAttempted(
+  userId: string,
+  puzzleId: string
+): Promise<void> {
+  const docRef = doc(db, "users", userId, "attemptedPuzzles", puzzleId);
+  await setDoc(docRef, {
+    attemptedAt: Timestamp.now(),
+  });
+}
+
+/**
+ * Check if a user has attempted a specific puzzle
+ */
+export async function hasPuzzleBeenAttempted(
+  userId: string,
+  puzzleId: string
+): Promise<boolean> {
+  const docRef = doc(db, "users", userId, "attemptedPuzzles", puzzleId);
+  const docSnap = await getDoc(docRef);
+  return docSnap.exists();
+}
+
+/**
+ * Get all attempted puzzle IDs for a user
+ */
+export async function getAttemptedPuzzleIds(
+  userId: string
+): Promise<Set<string>> {
+  const collectionRef = collection(db, "users", userId, "attemptedPuzzles");
+  const snapshot = await getDocs(collectionRef);
+  return new Set(snapshot.docs.map((doc) => doc.id));
 }

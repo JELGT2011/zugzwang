@@ -59,12 +59,14 @@ export function createPuzzleAgentInstructions(params: {
     boardAscii: string;
     themes: PuzzleTheme[];
     hintsUsed: number;
+    moveNumber: number;
+    totalMoves: number;
     playerColor: string;
     tacticalContext: PuzzleTacticalContext;
     solutionMove: string; // The correct move in UCI format (e.g., "e2e4", "g1f3")
     solutionMoveReadable: string; // Human-readable (e.g., "knight from g1 to f3")
 }): string {
-    const { boardAscii, themes, hintsUsed, playerColor, tacticalContext, solutionMove, solutionMoveReadable } = params;
+    const { boardAscii, themes, hintsUsed, moveNumber, totalMoves, playerColor, tacticalContext, solutionMove, solutionMoveReadable } = params;
 
     // Format themes for the prompt
     const themeDescriptions = themes
@@ -106,6 +108,7 @@ ${ARROW_ANNOTATION}
 
 PUZZLE CONTEXT:
 - Theme(s): ${themeDescriptions || "Not specified"}
+- Move: ${moveNumber} of ${totalMoves}
 - Hints already used: ${hintsUsed}
 
 Current Board:
@@ -137,6 +140,8 @@ PUZZLE HINT RULES:
 3. All hints MUST point toward the correct solution, not random tactics
 4. Use arrows to show relevant features, but don't draw the solution move directly
 5. Be warm and encouraging
+
+IMPORTANT: Start immediately with your hint. Do not wait for the user to speak or ask for help.
 `;
 }
 

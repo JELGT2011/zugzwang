@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
-import { usePuzzleAgentController, usePuzzleSession } from "@/hooks/usePuzzleAgentController";
+import { useAttemptedPuzzles } from "@/hooks/useAttemptedPuzzles";
+import { usePuzzleAgentController } from "@/hooks/usePuzzleAgentController";
 import { useRandomPuzzle } from "@/hooks/useRandomPuzzle";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { calculateNewElo, calculateRatingDelta, getPuzzleResult, type GameResult } from "@/lib/elo";
@@ -61,11 +62,14 @@ export default function PuzzlePage() {
   } = usePuzzleStore();
 
   const { profile } = useUserProfile();
+  
+  // Track attempted puzzles
+  const { attemptedPuzzleIds, markAttempted } = useAttemptedPuzzles();
 
-  // Random puzzle navigation
+  // Random puzzle navigation - exclude already attempted puzzles
   const { goToRandomPuzzle, isLoading: loadingRandomPuzzle } = useRandomPuzzle(
     profile?.elos?.puzzle,
-    { excludeId: puzzleId }
+    { excludeId: puzzleId, excludeIds: attemptedPuzzleIds }
   );
 
   // Puzzle Agent for hints
@@ -92,8 +96,7 @@ export default function PuzzlePage() {
     clearHistory,
   } = usePuzzleAgentController();
 
-  // Session hook - watches position changes and updates the agent
-  usePuzzleSession();
+  // Note: Agent no longer auto-responds to moves. Hints only when user clicks the button.
 
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -171,11 +174,13 @@ export default function PuzzlePage() {
   useEffect(() => {
     if (puzzle && (!currentPuzzle || currentPuzzle.id !== puzzle.id)) {
       startPuzzle(puzzle);
+      // Mark puzzle as attempted
+      markAttempted(puzzle.id);
       // Reset ELO tracking for new puzzle
       setEloResult(null);
       eloRecordedForPuzzleRef.current = null;
     }
-  }, [puzzle, currentPuzzle, startPuzzle]);
+  }, [puzzle, currentPuzzle, startPuzzle, markAttempted]);
 
   const handleHint = useCallback(async () => {
     // Use the puzzle agent for hints

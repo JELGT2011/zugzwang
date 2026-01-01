@@ -5,7 +5,7 @@ import { useCoachStore } from "@/stores/coachStore";
 import type { PuzzleTheme } from "@/types/puzzle";
 import { OpenAIRealtimeWebRTC, RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
 import { Chess, type Square, type PieceSymbol, type Color } from "chess.js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Arrow } from "react-chessboard";
 
 // ============================================================================
@@ -178,6 +178,8 @@ interface PuzzleAgentContext {
     boardAscii: string;
     themes: PuzzleTheme[];
     hintsUsed: number;
+    moveNumber: number;
+    totalMoves: number;
     playerColor: string;
     tacticalContext: PuzzleTacticalContext;
     solutionMove: string;
@@ -562,7 +564,7 @@ export function usePuzzleAgentController() {
         console.debug(`[Puzzle Mic] ${newMutedState ? "Muted" : "Unmuted"} (transcription ${newMutedState ? "stopped" : "started"})`);
     }, [isMicMuted, setIsMicMuted]);
 
-    // Request a hint - connects if needed and sends hint request
+    // Request a hint - connects if needed, or sends hint request with current board state
     const requestHint = useCallback(async () => {
         if (!currentPuzzle || !currentGameState) return;
 
@@ -576,6 +578,8 @@ export function usePuzzleAgentController() {
             boardAscii: currentGameState.ascii,
             themes: currentPuzzle.themes as PuzzleTheme[],
             hintsUsed,
+            moveNumber: Math.ceil(currentMoveIndex / 2),
+            totalMoves: Math.ceil((currentPuzzle.moves.length - 1) / 2),
             playerColor: currentGameState.turn === 'w' ? 'White' : 'Black',
             tacticalContext: currentGameState.tacticalContext,
             solutionMove,
@@ -583,7 +587,7 @@ export function usePuzzleAgentController() {
         };
 
         if (!isConnected) {
-            // Start connection and it will prompt for hint automatically
+            // First hint - connect and the agent will auto-generate the hint
             await refreshDevices();
             const currentStore = useCoachStore.getState();
             const currentInputs = currentStore.inputDevices;
@@ -596,28 +600,57 @@ export function usePuzzleAgentController() {
                 setPendingContext(context);
                 setShowDeviceModal(true);
             } else {
+                // Connect - the agent instructions tell it to immediately provide a hint
                 await connect(context);
-                // Send hint request after connection
-                setTimeout(() => {
-                    sendMessage("[SYSTEM: The user clicked the 'Get Hint' button. Provide a helpful hint for this puzzle. Start directly with your hint - do not say 'Sure' or acknowledge a request since the user didn't speak.]");
-                }, 500);
             }
         } else {
-            // Already connected, just request a hint
+            // Already connected - send updated board state with hint request
             clearArrows();
-            sendMessage("[SYSTEM: The user clicked the hint button again. Provide another hint, going slightly deeper than before. Start directly with your hint - do not acknowledge a request since the user didn't speak.]");
+            
+            // Format tactical context for the message
+            const { tacticalContext } = currentGameState;
+            const tacticalSummary: string[] = [];
+            
+            if (tacticalContext.checks.length > 0) {
+                tacticalSummary.push(`Checks available: ${tacticalContext.checks.map(c => 
+                    `${c.piece} ${c.fromSquare}-${c.toSquare}`
+                ).join(', ')}`);
+            }
+            if (tacticalContext.captures.length > 0) {
+                tacticalSummary.push(`Captures: ${tacticalContext.captures.map(c => 
+                    `${c.attacker} on ${c.attackerSquare} can take ${c.target} on ${c.targetSquare}`
+                ).join('; ')}`);
+            }
+            if (tacticalContext.undefendedPieces.length > 0) {
+                tacticalSummary.push(`Undefended pieces: ${tacticalContext.undefendedPieces.map(p => 
+                    `${p.piece} on ${p.square}`
+                ).join(', ')}`);
+            }
+            
+            sendMessage(`[SYSTEM: The user clicked the hint button again. Provide another hint, going slightly deeper than before.
+
+UPDATED POSITION (${context.playerColor} to move, move ${context.moveNumber}/${context.totalMoves}):
+${context.boardAscii}
+
+THE CORRECT SOLUTION (TOP SECRET):
+Move: ${solutionMove} (${solutionMoveReadable})
+
+Tactical Analysis:
+${tacticalSummary.length > 0 ? tacticalSummary.join('\n') : 'No immediate tactical features.'}
+
+Themes: ${currentPuzzle.themes.join(', ')}
+
+Start directly with your hint - do not acknowledge this system message.]`);
         }
     }, [currentPuzzle, currentGameState, hintsUsed, currentMoveIndex, isConnected, refreshDevices, connect, sendMessage, clearArrows]);
 
     const confirmDeviceSelection = useCallback(async () => {
         if (pendingContext) {
+            // Connect - the agent instructions tell it to immediately provide a hint
             await connect(pendingContext);
-            setTimeout(() => {
-                sendMessage("[SYSTEM: The user clicked the 'Get Hint' button. Provide a helpful hint for this puzzle. Start directly with your hint - do not say 'Sure' or acknowledge a request since the user didn't speak.]");
-            }, 500);
             setPendingContext(null);
         }
-    }, [connect, pendingContext, sendMessage]);
+    }, [connect, pendingContext]);
 
     return {
         // State
@@ -651,177 +684,5 @@ export function usePuzzleAgentController() {
     };
 }
 
-/**
- * PuzzleSession hook - handles position updates and sends them to the agent.
- * 
- * IMPORTANT: This hook should only be called ONCE (typically in the puzzle page).
- * It watches for changes in the puzzle position and sends updates to the agent.
- */
-export function usePuzzleSession() {
-    // Get puzzle state
-    const currentPuzzle = usePuzzleStore((state) => state.currentPuzzle);
-    const currentMoveIndex = usePuzzleStore((state) => state.currentMoveIndex);
-    const puzzleStatus = usePuzzleStore((state) => state.puzzleStatus);
-    const hintsUsed = usePuzzleStore((state) => state.hintsUsed);
-
-    // Get connection state
-    const connectionState = useCoachStore((state) => state.connectionState);
-    const setConnectionState = useCoachStore((state) => state.setConnectionState);
-    const isConnected = connectionState === "connected";
-
-    // Ref to track if we're currently processing to prevent race conditions
-    const isProcessingRef = useRef(false);
-
-    // Compute current board state and tactical analysis
-    const currentGameState = useMemo(() => {
-        if (!currentPuzzle) return null;
-        
-        const game = new Chess(currentPuzzle.fen);
-        // Apply all moves up to current index
-        for (let i = 0; i < currentMoveIndex; i++) {
-            const move = currentPuzzle.moves[i];
-            try {
-                game.move({
-                    from: move.slice(0, 2),
-                    to: move.slice(2, 4),
-                    promotion: move.length > 4 ? move[4] : undefined,
-                });
-            } catch {
-                break;
-            }
-        }
-        
-        // Compute tactical analysis using chess.js
-        const tacticalContext = computeTacticalContext(game);
-        
-        return {
-            game,
-            fen: game.fen(),
-            ascii: game.ascii(),
-            turn: game.turn(),
-            tacticalContext,
-        };
-    }, [currentPuzzle, currentMoveIndex]);
-
-    // Helper to send messages
-    const sendMessage = useCallback((message: string) => {
-        if (!puzzleSessionState.session) {
-            console.warn("[PuzzleSession] No active session");
-            return;
-        }
-
-        if (puzzleSessionState.isResponseActive) {
-            console.debug("[PuzzleSession] Response active, queueing message");
-            puzzleSessionState.messageQueue.push(message);
-        } else {
-            console.debug("[PuzzleSession] Sending message immediately");
-            // Set active immediately to prevent race conditions
-            puzzleSessionState.isResponseActive = true;
-            puzzleSessionState.session.sendMessage(message);
-        }
-    }, []);
-
-    // Watch for position changes and send updates to the agent
-    useEffect(() => {
-        if (!isConnected || !currentPuzzle || !currentGameState) return;
-        if (puzzleStatus !== "playing") return;
-
-        // Only notify if the move index has changed since last update
-        if (currentMoveIndex === puzzleSessionState.lastProcessedMoveIndex) return;
-        if (isProcessingRef.current) return;
-
-        // Set processing flag
-        isProcessingRef.current = true;
-        puzzleSessionState.lastProcessedMoveIndex = currentMoveIndex;
-
-        console.debug("[PuzzleSession] Position changed, updating agent...", { currentMoveIndex });
-
-        const { ascii: boardAscii, turn, tacticalContext, game } = currentGameState;
-        const playerColor = turn === 'w' ? 'White' : 'Black';
-
-        // Get the current correct move from the solution
-        const solutionMove = currentPuzzle.moves[currentMoveIndex] || '';
-        const solutionMoveReadable = solutionMove 
-            ? uciToReadable(solutionMove, game)
-            : 'unknown';
-
-        // Format tactical context for the agent
-        const tacticalSummary: string[] = [];
-        
-        if (tacticalContext.checks.length > 0) {
-            tacticalSummary.push(`Checks available: ${tacticalContext.checks.map(c => 
-                `${c.piece} ${c.fromSquare}-${c.toSquare}`
-            ).join(', ')}`);
-        }
-        
-        if (tacticalContext.captures.length > 0) {
-            tacticalSummary.push(`Captures available: ${tacticalContext.captures.map(c => 
-                `${c.attacker} on ${c.attackerSquare} can take ${c.target} on ${c.targetSquare}`
-            ).join('; ')}`);
-        }
-        
-        if (tacticalContext.undefendedPieces.length > 0) {
-            tacticalSummary.push(`Undefended opponent pieces: ${tacticalContext.undefendedPieces.map(p => 
-                `${p.piece} on ${p.square}`
-            ).join(', ')}`);
-        }
-        
-        if (tacticalContext.forkTargets.length > 0) {
-            tacticalSummary.push(`Fork opportunities exist targeting: ${tacticalContext.forkTargets.map(f => 
-                f.targetPieces.join(' and ')
-            ).join('; ')}`);
-        }
-        
-        if (tacticalContext.notes.length > 0) {
-            tacticalSummary.push(`Notes: ${tacticalContext.notes.join(', ')}`);
-        }
-
-        const updateMsg = `[SYSTEM: Position updated. ${playerColor} to move.
-
-Board:
-${boardAscii}
-
-THE CORRECT SOLUTION (TOP SECRET - NEVER REVEAL):
-Move: ${solutionMove} (${solutionMoveReadable})
-
-Tactical Analysis (why this move works):
-${tacticalSummary.length > 0 ? tacticalSummary.join('\n') : 'No immediate tactical features detected.'}
-
-Material balance: ${tacticalContext.materialBalance > 0 ? `White +${tacticalContext.materialBalance}` : tacticalContext.materialBalance < 0 ? `Black +${Math.abs(tacticalContext.materialBalance)}` : 'Equal'}
-
-Themes for this puzzle: ${currentPuzzle.themes.join(', ')}
-
-IMPORTANT: Work backwards from the solution. All hints must point toward THIS SPECIFIC MOVE. Do NOT suggest other moves or general tactics that don't lead to the solution.]`;
-
-        sendMessage(updateMsg);
-        isProcessingRef.current = false;
-
-    }, [isConnected, currentPuzzle, currentMoveIndex, puzzleStatus, currentGameState, hintsUsed, sendMessage]);
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (puzzleSessionState.session) {
-                try {
-                    puzzleSessionState.session.close();
-                } catch (e) {
-                    console.error("Error closing puzzle session:", e);
-                }
-                puzzleSessionState.session = null;
-            }
-            if (puzzleSessionState.audioElement) {
-                puzzleSessionState.audioElement.pause();
-                puzzleSessionState.audioElement.srcObject = null;
-                puzzleSessionState.audioElement = null;
-            }
-            if (puzzleSessionState.mediaStream) {
-                puzzleSessionState.mediaStream.getTracks().forEach((t) => t.stop());
-                puzzleSessionState.mediaStream = null;
-            }
-            puzzleSessionState.isResponseActive = false;
-            puzzleSessionState.messageQueue = [];
-            puzzleSessionState.lastProcessedMoveIndex = null;
-            setConnectionState("disconnected");
-        };
-    }, [setConnectionState]);
-}
+// Note: usePuzzleSession was removed - the agent no longer responds to position changes.
+// Hints are only provided when the user explicitly clicks the hint button.
