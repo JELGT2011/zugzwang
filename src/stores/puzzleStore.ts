@@ -19,6 +19,7 @@ interface PuzzleState {
     currentMoveIndex: number; // Which move in the solution we're on
     puzzleStatus: PuzzleStatus;
     playerMoves: string[]; // Moves the player has made
+    mistakeCount: number; // Number of incorrect moves made
     hintsUsed: number;
     showSolution: boolean;
 
@@ -36,6 +37,7 @@ interface PuzzleState {
     // Actions - Puzzle session
     startPuzzle: (puzzle: Puzzle) => void;
     makeMove: (move: string) => { correct: boolean; complete: boolean };
+    advanceMoveIndex: () => void; // Called after opponent's move is applied on the board
     useHint: () => string | null;
     showPuzzleSolution: () => void;
     resetPuzzle: () => void;
@@ -64,6 +66,7 @@ export const usePuzzleStore = create<PuzzleState>()(
             currentMoveIndex: 0,
             puzzleStatus: "idle",
             playerMoves: [],
+            mistakeCount: 0,
             hintsUsed: 0,
             showSolution: false,
 
@@ -86,13 +89,18 @@ export const usePuzzleStore = create<PuzzleState>()(
             setSortOption: (sortOption) => set({ sortOption }, false, "setSortOption"),
 
             // Puzzle session
+            // Note: currentMoveIndex starts at 1 because moves[0] is the setup move
+            // (opponent's last move that is shown before the puzzle starts).
+            // The PuzzleBoard component applies moves[0] in initializeGameFromPuzzle,
+            // so the player's first move to find is at index 1.
             startPuzzle: (puzzle) =>
                 set(
                     {
                         currentPuzzle: puzzle,
-                        currentMoveIndex: 0,
+                        currentMoveIndex: 1,
                         puzzleStatus: "playing",
                         playerMoves: [],
+                        mistakeCount: 0,
                         hintsUsed: 0,
                         showSolution: false,
                     },
@@ -101,22 +109,20 @@ export const usePuzzleStore = create<PuzzleState>()(
                 ),
 
             makeMove: (move) => {
-                const { currentPuzzle, currentMoveIndex, playerMoves } = get();
+                const { currentPuzzle, currentMoveIndex, playerMoves, mistakeCount } = get();
 
                 if (!currentPuzzle || get().puzzleStatus !== "playing") {
                     return { correct: false, complete: false };
                 }
 
-                // In puzzles, the player makes odd-indexed moves (0 is setup, 1 is player's first move, etc.)
-                // Actually, in Lichess puzzles:
-                // - moves[0] is the opponent's last move (already on the board when puzzle starts)
+                // In Lichess puzzles:
+                // - moves[0] is the opponent's last move (setup, already on board)
                 // - moves[1] is the player's first move
                 // - moves[2] is the opponent's response
                 // - moves[3] is the player's second move, etc.
-
                 // Player moves are at odd indices: 1, 3, 5, ...
-                const expectedMoveIndex = currentMoveIndex;
-                const expectedMove = currentPuzzle.moves[expectedMoveIndex];
+
+                const expectedMove = currentPuzzle.moves[currentMoveIndex];
 
                 // Normalize moves for comparison (remove promotion piece case differences)
                 const normalizedMove = move.toLowerCase();
@@ -138,9 +144,34 @@ export const usePuzzleStore = create<PuzzleState>()(
 
                     return { correct: true, complete: isComplete };
                 } else {
-                    set({ puzzleStatus: "failed" }, false, "makeMove:incorrect");
+                    // Increment mistake count but don't fail immediately
+                    // This allows players to try again
+                    set(
+                        { mistakeCount: mistakeCount + 1 },
+                        false,
+                        "makeMove:incorrect"
+                    );
                     return { correct: false, complete: false };
                 }
+            },
+
+            // Called by PuzzleBoard after applying the opponent's response move
+            // This advances the index so the next player move is checked correctly
+            advanceMoveIndex: () => {
+                const { currentPuzzle, currentMoveIndex } = get();
+                if (!currentPuzzle || get().puzzleStatus !== "playing") return;
+                
+                const newMoveIndex = currentMoveIndex + 1;
+                const isComplete = newMoveIndex >= currentPuzzle.moves.length;
+                
+                set(
+                    {
+                        currentMoveIndex: newMoveIndex,
+                        puzzleStatus: isComplete ? "success" : "playing",
+                    },
+                    false,
+                    "advanceMoveIndex"
+                );
             },
 
             useHint: () => {
@@ -166,9 +197,10 @@ export const usePuzzleStore = create<PuzzleState>()(
                 if (currentPuzzle) {
                     set(
                         {
-                            currentMoveIndex: 0,
+                            currentMoveIndex: 1, // Start at 1 since moves[0] is the setup move
                             puzzleStatus: "playing",
                             playerMoves: [],
+                            mistakeCount: 0,
                             hintsUsed: 0,
                             showSolution: false,
                         },

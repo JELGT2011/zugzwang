@@ -20,6 +20,12 @@ interface CoachState {
     selectedOutputDeviceId: string;
     isTestingAudio: boolean;
 
+    // Microphone mute state - default to muted (not transcribing)
+    isMicMuted: boolean;
+
+    // Audio setup tracking - true once user has confirmed device selection this session
+    audioSetupComplete: boolean;
+
     // Coach output - current active transcript (what's being spoken now)
     transcript: string;
 
@@ -33,6 +39,8 @@ interface CoachState {
     setSelectedInputDeviceId: (deviceId: string) => void;
     setSelectedOutputDeviceId: (deviceId: string) => void;
     setIsTestingAudio: (testing: boolean) => void;
+    setIsMicMuted: (muted: boolean) => void;
+    setAudioSetupComplete: (complete: boolean) => void;
     setTranscript: (transcript: string | ((prev: string) => string)) => void;
     addToHistory: (message: TranscriptMessage) => void;
     clearHistory: () => void;
@@ -46,6 +54,8 @@ const initialState = {
     selectedInputDeviceId: "",
     selectedOutputDeviceId: "",
     isTestingAudio: false,
+    isMicMuted: true, // Default to muted (not transcribing)
+    audioSetupComplete: false,
     transcript: "",
     transcriptHistory: [],
 };
@@ -62,6 +72,8 @@ export const useCoachStore = create<CoachState>()(
             setSelectedInputDeviceId: (selectedInputDeviceId) => set({ selectedInputDeviceId }, false, "setSelectedInputDeviceId"),
             setSelectedOutputDeviceId: (selectedOutputDeviceId) => set({ selectedOutputDeviceId }, false, "setSelectedOutputDeviceId"),
             setIsTestingAudio: (testing) => set({ isTestingAudio: testing }, false, "setIsTestingAudio"),
+            setIsMicMuted: (muted) => set({ isMicMuted: muted }, false, "setIsMicMuted"),
+            setAudioSetupComplete: (complete) => set({ audioSetupComplete: complete }, false, "setAudioSetupComplete"),
             setTranscript: (transcript) =>
                 set((state) => ({
                     transcript: typeof transcript === "function" ? transcript(state.transcript) : transcript,

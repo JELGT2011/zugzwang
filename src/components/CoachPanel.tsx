@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useCoachController, useCoachSession } from "@/hooks";
-import { Loader2, Mic, MicOff, Settings } from "lucide-react";
+import { Loader2, Mic, MicOff, Settings, Square } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 
 // CoachPanel handles the coach UI and session lifecycle
@@ -19,6 +19,7 @@ export default function CoachPanel() {
         selectedInputDeviceId,
         selectedOutputDeviceId,
         isTestingAudio,
+        isMicMuted,
         transcript,
         transcriptHistory,
         showDeviceModal,
@@ -30,6 +31,7 @@ export default function CoachPanel() {
         setSelectedInputDeviceId,
         setSelectedOutputDeviceId,
         setShowDeviceModal,
+        toggleMic,
     } = useCoachController();
 
     // Coach session - ONLY called here (handles move-watching and cleanup)
@@ -73,30 +75,37 @@ export default function CoachPanel() {
                 </CardTitle>
                 <div className="flex items-center gap-2">
                     {/* Connect/Disconnect Button */}
-                    <Button
-                        variant={isConnected ? "destructive" : "default"}
-                        size="sm"
-                        className="h-7 text-[10px] uppercase tracking-wider px-2 gap-1.5"
-                        onClick={handleConnect}
-                        disabled={isConnecting}
-                    >
-                        {isConnecting ? (
-                            <>
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                Connecting
-                            </>
-                        ) : isConnected ? (
-                            <>
-                                <MicOff className="w-3 h-3" />
-                                Disconnect
-                            </>
-                        ) : (
-                            <>
-                                <Mic className="w-3 h-3" />
-                                Connect
-                            </>
-                        )}
-                    </Button>
+                    {!isConnected ? (
+                        <Button
+                            variant="default"
+                            size="sm"
+                            className="h-7 text-[10px] uppercase tracking-wider px-2 gap-1.5"
+                            onClick={handleConnect}
+                            disabled={isConnecting}
+                        >
+                            {isConnecting ? (
+                                <>
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Connecting
+                                </>
+                            ) : (
+                                <>
+                                    <Mic className="w-3 h-3" />
+                                    Connect
+                                </>
+                            )}
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-[10px] uppercase tracking-wider px-2 gap-1.5 text-destructive hover:text-destructive"
+                            onClick={cleanupSession}
+                        >
+                            <MicOff className="w-3 h-3" />
+                            Disconnect
+                        </Button>
+                    )}
 
                     {/* Settings Dropdown */}
                     {!isConnecting && (
@@ -121,57 +130,80 @@ export default function CoachPanel() {
                 </div>
             </CardHeader>
 
-            <ScrollArea className="flex-1 overflow-hidden" ref={scrollAreaRef}>
-                <CardContent className="p-4 font-sans text-sm leading-relaxed">
-                    {!isConnected && !isConnecting ? (
-                        <div className="flex flex-col items-center justify-center py-8 gap-2">
-                            <p className="text-muted-foreground italic text-center text-sm">
-                                Click Connect to start the AI coach.
-                            </p>
-                        </div>
-                    ) : isConnecting ? (
-                        <div className="flex flex-col items-center justify-center py-8 gap-2">
-                            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                            <p className="text-muted-foreground italic text-center text-sm">
-                                Connecting to coach...
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {/* Transcript History */}
-                            {transcriptHistory.length === 0 && !transcript ? (
-                                <div className="text-muted-foreground italic text-sm py-4">
-                                    Listening... (make a move or ask a question)
-                                </div>
-                            ) : (
-                                <>
-                                    {transcriptHistory.map((msg, idx) => (
-                                        <div
-                                            key={idx}
-                                            className={`${msg.role === "user" ? "text-muted-foreground" : "text-foreground"}`}
-                                        >
-                                            <span className={`mr-2 font-bold ${msg.role === "user" ? "text-foreground" : "text-primary"}`}>
-                                                {msg.role === "user" ? "You:" : "Zuggy:"}
-                                            </span>
-                                            {msg.content}
-                                        </div>
-                                    ))}
+            <div className="relative flex-1 min-h-0">
+                <ScrollArea className="h-full" ref={scrollAreaRef}>
+                    <CardContent className="p-4 pb-16 font-sans text-sm leading-relaxed">
+                        {!isConnected && !isConnecting ? (
+                            <div className="flex flex-col items-center justify-center py-8 gap-2">
+                                <p className="text-muted-foreground italic text-center text-sm">
+                                    Click Connect to start the AI coach.
+                                </p>
+                            </div>
+                        ) : isConnecting ? (
+                            <div className="flex flex-col items-center justify-center py-8 gap-2">
+                                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                                <p className="text-muted-foreground italic text-center text-sm">
+                                    Connecting to coach...
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {/* Transcript History */}
+                                {transcriptHistory.length === 0 && !transcript ? (
+                                    <div className="text-muted-foreground italic text-sm py-4">
+                                        {isMicMuted 
+                                            ? "Connected. Make a move or tap the mic to speak."
+                                            : "Listening... (speak or make a move)"}
+                                    </div>
+                                ) : (
+                                    <>
+                                        {transcriptHistory.map((msg, idx) => (
+                                            <div
+                                                key={idx}
+                                                className={`${msg.role === "user" ? "text-muted-foreground" : "text-foreground"}`}
+                                            >
+                                                <span className={`mr-2 font-bold ${msg.role === "user" ? "text-foreground" : "text-primary"}`}>
+                                                    {msg.role === "user" ? "You:" : "Zuggy:"}
+                                                </span>
+                                                {msg.content}
+                                            </div>
+                                        ))}
 
-                                    {/* Current active transcript (being spoken now) */}
-                                    {transcript && (
-                                        <div className="text-foreground">
-                                            <span className="text-primary mr-2 font-bold">Zuggy:</span>
-                                            {transcript}
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                            {/* Invisible element to scroll to */}
-                            <div ref={scrollBottomRef} />
-                        </div>
-                    )}
-                </CardContent>
-            </ScrollArea>
+                                        {/* Current active transcript (being spoken now) */}
+                                        {transcript && (
+                                            <div className="text-foreground">
+                                                <span className="text-primary mr-2 font-bold">Zuggy:</span>
+                                                {transcript}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                                {/* Invisible element to scroll to */}
+                                <div ref={scrollBottomRef} />
+                            </div>
+                        )}
+                    </CardContent>
+                </ScrollArea>
+
+                {/* Floating Transcribe/Stop Button */}
+                {isConnected && (
+                    <Button
+                        variant={isMicMuted ? "default" : "secondary"}
+                        size="icon"
+                        className={`absolute bottom-3 right-3 h-10 w-10 rounded-full shadow-lg transition-all ${
+                            !isMicMuted ? "ring-2 ring-primary ring-offset-2 ring-offset-background animate-pulse" : ""
+                        }`}
+                        onClick={toggleMic}
+                        title={isMicMuted ? "Start transcribing" : "Stop transcribing"}
+                    >
+                        {isMicMuted ? (
+                            <Mic className="w-4 h-4" />
+                        ) : (
+                            <Square className="w-4 h-4" />
+                        )}
+                    </Button>
+                )}
+            </div>
 
             {/* Audio Device Selection Modal */}
             <AudioDeviceModal

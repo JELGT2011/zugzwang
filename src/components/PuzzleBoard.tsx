@@ -10,6 +10,7 @@ import type { Arrow } from "react-chessboard";
 
 interface PuzzleBoardProps {
   puzzle: Puzzle;
+  externalArrows?: Arrow[];
 }
 
 // Helper to initialize game state from puzzle
@@ -40,13 +41,14 @@ function initializeGameFromPuzzle(puzzle: Puzzle): { game: Chess; setupMoveSquar
   return { game, setupMoveSquares };
 }
 
-export default function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
+export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoardProps) {
   const {
     currentMoveIndex,
     puzzleStatus,
     showSolution,
     hintsUsed,
     makeMove: storeMakeMove,
+    advanceMoveIndex,
   } = usePuzzleStore();
 
   // Track puzzle ID to detect changes
@@ -114,8 +116,11 @@ export default function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
       return newGame;
     });
     
+    // Advance the store's move index so the next player move is checked correctly
+    advanceMoveIndex();
+    
     setIsAnimating(false);
-  }, [puzzle.moves]);
+  }, [puzzle.moves, advanceMoveIndex]);
 
   // Derive hint highlight squares from state (no effect needed)
   const hintHighlightSquares = useMemo(() => {
@@ -135,6 +140,8 @@ export default function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
 
   // Derive solution arrows from state (no effect needed)
   const arrows = useMemo(() => {
+    const allArrows: Arrow[] = [...externalArrows];
+    
     if (showSolution && puzzleStatus === "failed") {
       const remainingMoves = puzzle.moves.slice(currentMoveIndex);
       const solutionArrows: Arrow[] = remainingMoves
@@ -146,10 +153,10 @@ export default function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
           color: i === 0 ? "rgb(69, 133, 136)" : "rgba(69, 133, 136, 0.5)",
         }));
       
-      return solutionArrows;
+      allArrows.push(...solutionArrows);
     }
-    return [];
-  }, [showSolution, puzzleStatus, currentMoveIndex, puzzle.moves]);
+    return allArrows;
+  }, [showSolution, puzzleStatus, currentMoveIndex, puzzle.moves, externalArrows]);
 
   // Handle piece drop
   const onDrop = useCallback(
@@ -164,10 +171,10 @@ export default function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
         return false;
       }
 
-      // Check if it's the player's turn (odd moves in the array: 1, 3, 5, ...)
+      // Check if it's the player's turn (odd indices: 1, 3, 5, ...)
+      // Player moves are at odd indices, opponent moves are at even indices
       const isPlayerTurn = currentMoveIndex % 2 === 1;
-      if (!isPlayerTurn && currentMoveIndex !== 1) {
-        // currentMoveIndex 1 is the first player move
+      if (!isPlayerTurn) {
         return false;
       }
 

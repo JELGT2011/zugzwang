@@ -12,11 +12,25 @@ export class StockfishEngine {
   private evalRegex = /Total Evaluation[\s\S]+\n$/;
   public loaded = false;
   public ready = false;
+  public hasError = false;
 
   constructor(path: string = "/stockfish.js") {
     if (typeof window !== "undefined") {
-      this.worker = new Worker(path);
-      this.worker.onmessage = (e) => this.handleMessage(e);
+      try {
+        this.worker = new Worker(path);
+        this.worker.onmessage = (e) => this.handleMessage(e);
+        this.worker.onerror = (e) => {
+          console.error("Stockfish worker error:", e.message);
+          console.error("Cross-origin isolated:", window.crossOriginIsolated);
+          this.hasError = true;
+          // Don't propagate the error to crash the app
+          e.preventDefault();
+        };
+      } catch (error) {
+        console.error("Failed to create Stockfish worker:", error);
+        console.error("Cross-origin isolated:", window.crossOriginIsolated);
+        this.hasError = true;
+      }
     }
   }
 
@@ -137,6 +151,15 @@ export class StockfishEngine {
   }
 
   public send(cmd: string, cb?: (message: string) => void, stream?: (message: string) => void) {
+    // Don't send commands if the worker has errored
+    if (this.hasError || !this.worker) {
+      console.warn("Stockfish: Cannot send command, worker is not available");
+      if (cb) {
+        setTimeout(() => cb(""), 0);
+      }
+      return;
+    }
+
     cmd = cmd.trim();
 
     console.debug("Stockfish (send): " + cmd);
@@ -156,7 +179,7 @@ export class StockfishEngine {
       }
     }
 
-    this.worker?.postMessage(cmd);
+    this.worker.postMessage(cmd);
   }
 
   public stopMoves() {

@@ -214,6 +214,7 @@ function analyzeTactics(beforeFen: string, afterGame: Chess, movingSide: 'w' | '
 
 export function StockfishProvider({ children }: { children: React.ReactNode }) {
     const [isReady, setIsReady] = useState(false);
+    const [initError, setInitError] = useState<string | null>(null);
     const engineRef = useRef<StockfishEngine | null>(null);
     
     // Ref for synchronous "thinking" guard to prevent concurrent Stockfish calls.
@@ -222,15 +223,30 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
 
     // Initialize engine on mount
     useEffect(() => {
-        console.debug("Initializing Stockfish engine...");
-        const engine = new StockfishEngine();
-        engineRef.current = engine;
+        // Check for cross-origin isolation (required for SharedArrayBuffer)
+        if (typeof window !== 'undefined' && !window.crossOriginIsolated) {
+            console.warn(
+                "Cross-origin isolation is not enabled. Stockfish multi-threading may not work. " +
+                "Ensure COOP and COEP headers are set correctly."
+            );
+        }
 
-        engine.send("uci");
-        engine.send("isready", () => {
-            console.debug("Stockfish is ready");
-            setIsReady(true);
-        });
+        console.debug("Initializing Stockfish engine...");
+        console.debug("crossOriginIsolated:", typeof window !== 'undefined' ? window.crossOriginIsolated : 'N/A (SSR)');
+        
+        try {
+            const engine = new StockfishEngine();
+            engineRef.current = engine;
+
+            engine.send("uci");
+            engine.send("isready", () => {
+                console.debug("Stockfish is ready");
+                setIsReady(true);
+            });
+        } catch (error) {
+            console.error("Failed to initialize Stockfish:", error);
+            setInitError(error instanceof Error ? error.message : "Unknown error");
+        }
 
         return () => {
             console.debug("Terminating Stockfish engine...");
@@ -238,6 +254,13 @@ export function StockfishProvider({ children }: { children: React.ReactNode }) {
             engineRef.current = null;
         };
     }, []);
+
+    // Log initialization error for debugging
+    useEffect(() => {
+        if (initError) {
+            console.error("Stockfish initialization error:", initError);
+        }
+    }, [initError]);
 
     const getBestMove = useCallback(
         (fen: string, depth: number = 12): Promise<string | null> => {

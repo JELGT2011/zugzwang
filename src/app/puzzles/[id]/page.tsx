@@ -1,11 +1,18 @@
 "use client";
 
+import AudioDeviceModal from "@/components/AudioDeviceModal";
 import PuzzleBoard from "@/components/PuzzleBoard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePuzzleAgentController, usePuzzleSession } from "@/hooks/usePuzzleAgentController";
+import { useRandomPuzzle } from "@/hooks/useRandomPuzzle";
+import { useUserProfile } from "@/hooks/useUserProfile";
+import { calculateNewElo, calculateRatingDelta, getPuzzleResult, type GameResult } from "@/lib/elo";
 import { fetchPuzzleById, fetchAllPuzzles } from "@/lib/puzzles";
+import { updateUserElo } from "@/lib/userProfile";
 import { usePuzzleStore } from "@/stores";
 import {
   getDifficultyFromRating,
@@ -16,21 +23,25 @@ import {
 } from "@/types/puzzle";
 import {
   ArrowLeft,
-  ArrowRight,
   ExternalLink,
   Lightbulb,
+  Loader2,
   LogIn,
+  Mic,
   RotateCcw,
+  Shuffle,
+  Square,
+  TrendingDown,
+  TrendingUp,
   Trophy,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useParams } from "next/navigation";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 export default function PuzzlePage() {
   const params = useParams();
-  const router = useRouter();
   const puzzleId = params.id as string;
   const { user, loading: authLoading, signInWithGoogle } = useAuth();
 
@@ -38,6 +49,7 @@ export default function PuzzlePage() {
     puzzles,
     currentPuzzle,
     puzzleStatus,
+    mistakeCount,
     hintsUsed,
     showSolution,
     setPuzzles,
@@ -46,12 +58,57 @@ export default function PuzzlePage() {
     useHint: requestHint,
     showPuzzleSolution,
     resetPuzzle,
-    nextPuzzle,
   } = usePuzzleStore();
+
+  const { profile } = useUserProfile();
+
+  // Random puzzle navigation
+  const { goToRandomPuzzle, isLoading: loadingRandomPuzzle } = useRandomPuzzle(
+    profile?.elos?.puzzle,
+    { excludeId: puzzleId }
+  );
+
+  // Puzzle Agent for hints
+  const {
+    isConnected: agentConnected,
+    isConnecting: agentConnecting,
+    isMicMuted,
+    transcript,
+    transcriptHistory,
+    arrows: agentArrows,
+    showDeviceModal,
+    inputDevices,
+    outputDevices,
+    selectedInputDeviceId,
+    selectedOutputDeviceId,
+    requestHint: agentRequestHint,
+    confirmDeviceSelection,
+    cleanupSession,
+    setSelectedInputDeviceId,
+    setSelectedOutputDeviceId,
+    setShowDeviceModal,
+    toggleMic,
+    clearArrows,
+    clearHistory,
+  } = usePuzzleAgentController();
+
+  // Session hook - watches position changes and updates the agent
+  usePuzzleSession();
 
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // ELO tracking
+  const [eloResult, setEloResult] = useState<{
+    result: GameResult;
+    delta: number;
+    newRating: number;
+  } | null>(null);
+  const eloRecordedForPuzzleRef = useRef<string | null>(null);
+  
+  // Track if we've auto-triggered the first hint for this puzzle
+  const autoHintTriggeredRef = useRef<string | null>(null);
 
   // Load single puzzle from Firestore
   const loadPuzzle = useCallback(async () => {
@@ -114,8 +171,77 @@ export default function PuzzlePage() {
   useEffect(() => {
     if (puzzle && (!currentPuzzle || currentPuzzle.id !== puzzle.id)) {
       startPuzzle(puzzle);
+      // Reset ELO tracking for new puzzle
+      setEloResult(null);
+      eloRecordedForPuzzleRef.current = null;
     }
   }, [puzzle, currentPuzzle, startPuzzle]);
+
+  const handleHint = useCallback(async () => {
+    // Use the puzzle agent for hints
+    // Also increment the hint counter in the store
+    requestHint();
+    await agentRequestHint();
+  }, [requestHint, agentRequestHint]);
+
+  // Cleanup agent when puzzle changes or resets
+  useEffect(() => {
+    if (puzzleStatus === "playing" && hintsUsed === 0) {
+      clearArrows();
+      clearHistory();
+    }
+  }, [puzzleStatus, hintsUsed, clearArrows, clearHistory]);
+
+  // Auto-trigger first hint when puzzle loads
+  useEffect(() => {
+    // Only trigger once per puzzle
+    if (!puzzle || autoHintTriggeredRef.current === puzzle.id) return;
+    // Wait until puzzle is ready to play
+    if (puzzleStatus !== "playing") return;
+    // Don't trigger if already connecting or connected
+    if (agentConnecting || agentConnected) return;
+    
+    // Mark as triggered for this puzzle
+    autoHintTriggeredRef.current = puzzle.id;
+    
+    // Request the first hint automatically
+    handleHint();
+  }, [puzzle, puzzleStatus, agentConnecting, agentConnected, handleHint]);
+
+  // Record ELO when puzzle is completed (success or solution shown)
+  useEffect(() => {
+    const recordElo = async () => {
+      // Only record once per puzzle
+      if (!puzzle || !user || !profile?.elos?.puzzle) return;
+      if (eloRecordedForPuzzleRef.current === puzzle.id) return;
+      if (puzzleStatus !== "success" && !showSolution) return;
+
+      // Determine result
+      const result = getPuzzleResult(puzzleStatus === "success", mistakeCount);
+      
+      // Calculate new ELO
+      const playerRating = profile.elos.puzzle;
+      const puzzleRating = puzzle.rating;
+      const delta = calculateRatingDelta(playerRating, puzzleRating, result);
+      const newRating = calculateNewElo(playerRating, puzzleRating, result);
+
+      // Record that we've processed this puzzle
+      eloRecordedForPuzzleRef.current = puzzle.id;
+
+      // Update state to show result
+      setEloResult({ result, delta, newRating });
+
+      // Update Firestore
+      try {
+        await updateUserElo(user.uid, "puzzle", newRating);
+        console.log(`ELO updated: ${playerRating} → ${newRating} (${delta >= 0 ? "+" : ""}${delta}) [${result}]`);
+      } catch (err) {
+        console.error("Failed to update ELO:", err);
+      }
+    };
+
+    recordElo();
+  }, [puzzle, user, profile, puzzleStatus, showSolution, mistakeCount]);
 
   // Show loading state while checking auth
   if (authLoading) {
@@ -200,77 +326,33 @@ export default function PuzzlePage() {
   const difficulty = getDifficultyFromRating(puzzle.rating);
   const difficultyInfo = DIFFICULTY_RANGES[difficulty];
 
-  const handleNextPuzzle = () => {
-    const next = nextPuzzle();
-    if (next) {
-      router.push(`/puzzles/${next.id}`);
-    }
-  };
-
-  const handleHint = () => {
-    const hintSquare = requestHint();
-    if (hintSquare) {
-      // The hint is handled by the PuzzleBoard component through the store
-      console.log("Hint: Start from", hintSquare);
-    }
-  };
-
   return (
     <main className="py-6 min-h-screen">
       <div className="container mx-auto px-4">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-6">
           <Link href="/puzzles">
             <Button variant="ghost" size="sm" className="gap-2">
               <ArrowLeft className="w-4 h-4" />
               Back to Puzzles
             </Button>
           </Link>
-
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              style={{
-                borderColor: difficultyInfo.color,
-                color: difficultyInfo.color,
-              }}
-            >
-              Rating: {puzzle.rating}
-            </Badge>
-            <Badge
-              style={{
-                backgroundColor: `${difficultyInfo.color}20`,
-                color: difficultyInfo.color,
-              }}
-            >
-              {difficultyInfo.label}
-            </Badge>
-          </div>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6 max-w-[1200px] mx-auto">
           {/* Puzzle Board */}
           <div className="flex-1 min-w-0 flex justify-center">
             <div className="w-full max-w-[600px]">
-              <PuzzleBoard puzzle={puzzle} />
+              <PuzzleBoard puzzle={puzzle} externalArrows={agentArrows} />
             </div>
           </div>
 
           {/* Side Panel */}
           <div className="lg:w-[320px] shrink-0 space-y-4">
-            {/* Status Card */}
-            <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
-              <div className="space-y-4">
-                {/* Status indicator */}
+            {/* Status Card - only show for success/failed states */}
+            {(puzzleStatus === "success" || puzzleStatus === "failed") && (
+              <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
                 <div className="text-center py-3">
-                  {puzzleStatus === "playing" && (
-                    <div className="space-y-2">
-                      <p className="text-lg font-medium">Your Turn</p>
-                      <p className="text-sm text-muted-foreground">
-                        Find the best move
-                      </p>
-                    </div>
-                  )}
                   {puzzleStatus === "success" && (
                     <div className="space-y-2">
                       <Trophy className="w-12 h-12 mx-auto text-success" />
@@ -278,10 +360,25 @@ export default function PuzzlePage() {
                         Puzzle Solved!
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {hintsUsed === 0
-                          ? "Perfect! No hints used."
-                          : `Solved with ${hintsUsed} hint${hintsUsed > 1 ? "s" : ""}`}
+                        {mistakeCount === 0
+                          ? "Perfect! No mistakes."
+                          : `Solved with ${mistakeCount} mistake${mistakeCount > 1 ? "s" : ""}`}
                       </p>
+                      {eloResult && (
+                        <div className={`flex items-center justify-center gap-1 text-sm font-medium ${
+                          eloResult.delta >= 0 ? "text-success" : "text-destructive"
+                        }`}>
+                          {eloResult.delta >= 0 ? (
+                            <TrendingUp className="w-4 h-4" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4" />
+                          )}
+                          <span>{eloResult.delta >= 0 ? "+" : ""}{eloResult.delta}</span>
+                          <span className="text-muted-foreground font-normal">
+                            ({eloResult.newRating})
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                   {puzzleStatus === "failed" && (
@@ -291,113 +388,253 @@ export default function PuzzlePage() {
                         {showSolution ? "Solution Shown" : "Incorrect Move"}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        Try again or view the solution
+                        {showSolution ? "Better luck next time!" : "Try again or view the solution"}
                       </p>
+                      {eloResult && showSolution && (
+                        <div className={`flex items-center justify-center gap-1 text-sm font-medium ${
+                          eloResult.delta >= 0 ? "text-success" : "text-destructive"
+                        }`}>
+                          {eloResult.delta >= 0 ? (
+                            <TrendingUp className="w-4 h-4" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4" />
+                          )}
+                          <span>{eloResult.delta >= 0 ? "+" : ""}{eloResult.delta}</span>
+                          <span className="text-muted-foreground font-normal">
+                            ({eloResult.newRating})
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
+              </Card>
+            )}
 
-                {/* Action buttons */}
-                <div className="flex flex-col gap-2">
-                  {puzzleStatus === "playing" && (
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={handleHint}
-                        className="w-full"
-                      >
-                        <Lightbulb className="w-4 h-4 mr-2" />
-                        Get Hint {hintsUsed > 0 && `(${hintsUsed} used)`}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={showPuzzleSolution}
-                        className="w-full text-muted-foreground"
-                      >
-                        Show Solution
-                      </Button>
-                    </>
-                  )}
+            {/* Coach Conversation */}
+            {puzzleStatus === "playing" && (
+              <div className="relative p-3 pb-14 bg-primary/10 rounded-lg border border-primary/20 min-h-[100px]">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-primary">Coach</span>
+                </div>
+                <ScrollArea className="max-h-32">
+                  <div className="space-y-2">
+                    {transcriptHistory.length === 0 && !transcript ? (
+                      <p className="text-sm text-muted-foreground italic">
+                        Tap the lightbulb for a hint
+                      </p>
+                    ) : (
+                      <>
+                        {transcriptHistory.map((msg, idx) => (
+                          <div
+                            key={idx}
+                            className={`text-sm ${msg.role === "user" ? "text-muted-foreground" : "text-foreground"}`}
+                          >
+                            <span className={`mr-1 font-medium ${msg.role === "user" ? "text-foreground" : "text-primary"}`}>
+                              {msg.role === "user" ? "You:" : "Zuggy:"}
+                            </span>
+                            {msg.content}
+                          </div>
+                        ))}
+                        {transcript && (
+                          <div className="text-sm text-foreground">
+                            <span className="text-primary mr-1 font-medium">Zuggy:</span>
+                            {transcript}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </ScrollArea>
 
-                  {(puzzleStatus === "success" || puzzleStatus === "failed") && (
-                    <>
-                      <Button onClick={handleNextPuzzle} className="w-full">
-                        Next Puzzle
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={resetPuzzle}
-                        className="w-full"
-                      >
-                        <RotateCcw className="w-4 h-4 mr-2" />
-                        Try Again
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </Card>
-
-            {/* Puzzle Info Card */}
-            <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
-              <h3 className="font-semibold mb-3">Puzzle Info</h3>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">ID</span>
-                  <span className="font-mono">{puzzle.id}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Moves</span>
-                  <span>{puzzle.moves.length - 1} to solve</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Played</span>
-                  <span>{puzzle.nbPlays.toLocaleString()} times</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Popularity</span>
-                  <span>{puzzle.popularity}%</span>
-                </div>
-
-                {puzzle.gameUrl && (
-                  <a
-                    href={puzzle.gameUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-primary hover:underline"
+                {/* Floating Action Buttons */}
+                <div className="absolute bottom-2 right-2 flex items-center gap-2">
+                  {/* Get Hint FAB */}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 rounded-full shadow-md bg-background"
+                    onClick={handleHint}
+                    disabled={agentConnecting}
+                    title={`Get hint${hintsUsed > 0 ? ` (${hintsUsed} used)` : ""}`}
                   >
-                    View Original Game
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </div>
-            </Card>
+                    {agentConnecting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Lightbulb className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
 
-            {/* Themes Card */}
-            <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
-              <h3 className="font-semibold mb-3">Themes</h3>
-              <div className="flex flex-wrap gap-1.5">
-                {puzzle.themes.map((theme) => (
-                  <Link
-                    key={theme}
-                    href={`/puzzles?theme=${theme}`}
-                    className="inline-block"
-                  >
-                    <Badge
-                      variant="secondary"
-                      className="text-xs hover:bg-primary/20 transition-colors cursor-pointer"
+                  {/* Transcribe/Stop FAB - only when connected */}
+                  {agentConnected && (
+                    <Button
+                      variant={isMicMuted ? "default" : "secondary"}
+                      size="icon"
+                      className={`h-8 w-8 rounded-full shadow-md transition-all ${
+                        !isMicMuted ? "ring-2 ring-primary ring-offset-1 ring-offset-background animate-pulse" : ""
+                      }`}
+                      onClick={toggleMic}
+                      title={isMicMuted ? "Start transcribing" : "Stop transcribing"}
                     >
-                      {THEME_DISPLAY_NAMES[theme as PuzzleTheme] || theme}
-                    </Badge>
-                  </Link>
-                ))}
+                      {isMicMuted ? (
+                        <Mic className="w-3.5 h-3.5" />
+                      ) : (
+                        <Square className="w-3.5 h-3.5" />
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
-            </Card>
+            )}
+
+            {/* Action buttons */}
+            {puzzleStatus === "playing" && (
+              <Button
+                variant="ghost"
+                onClick={showPuzzleSolution}
+                className="w-full text-muted-foreground"
+              >
+                Show Solution
+              </Button>
+            )}
+
+            {(puzzleStatus === "success" || puzzleStatus === "failed") && (
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={() => {
+                    // Cleanup before navigating to new puzzle
+                    setEloResult(null);
+                    eloRecordedForPuzzleRef.current = null;
+                    autoHintTriggeredRef.current = null;
+                    cleanupSession();
+                    clearArrows();
+                    clearHistory();
+                    goToRandomPuzzle();
+                  }}
+                  disabled={loadingRandomPuzzle || !profile?.elos?.puzzle}
+                  className="w-full"
+                >
+                  {loadingRandomPuzzle ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Shuffle className="w-4 h-4 mr-2" />
+                      New Puzzle
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    autoHintTriggeredRef.current = null; // Reset so auto-hint triggers again
+                    cleanupSession();
+                    clearArrows();
+                    clearHistory();
+                    resetPuzzle();
+                  }}
+                  className="w-full"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Try Again
+                </Button>
+              </div>
+            )}
+
+            {/* Puzzle Details Card - shown after completion */}
+            {eloResult && (
+              <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
+                <h3 className="font-semibold mb-3">Puzzle Details</h3>
+
+                {/* Rating & Difficulty */}
+                <div className="flex items-center gap-2 mb-4">
+                  <Badge
+                    variant="outline"
+                    style={{
+                      borderColor: difficultyInfo.color,
+                      color: difficultyInfo.color,
+                    }}
+                  >
+                    Rating: {puzzle.rating}
+                  </Badge>
+                  <Badge
+                    style={{
+                      backgroundColor: `${difficultyInfo.color}20`,
+                      color: difficultyInfo.color,
+                    }}
+                  >
+                    {difficultyInfo.label}
+                  </Badge>
+                </div>
+
+                {/* Puzzle Info */}
+                <div className="space-y-3 text-sm mb-4">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">ID</span>
+                    <span className="font-mono">{puzzle.id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Played</span>
+                    <span>{puzzle.nbPlays.toLocaleString()} times</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Popularity</span>
+                    <span>{puzzle.popularity}%</span>
+                  </div>
+
+                  {puzzle.gameUrl && (
+                    <a
+                      href={puzzle.gameUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-primary hover:underline"
+                    >
+                      View Original Game
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+
+                {/* Themes */}
+                <div className="pt-3 border-t border-border/50">
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Themes</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {puzzle.themes.map((theme) => (
+                      <Link
+                        key={theme}
+                        href={`/puzzles?theme=${theme}`}
+                        className="inline-block"
+                      >
+                        <Badge
+                          variant="secondary"
+                          className="text-xs hover:bg-primary/20 transition-colors cursor-pointer"
+                        >
+                          {THEME_DISPLAY_NAMES[theme as PuzzleTheme] || theme}
+                        </Badge>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Audio Device Selection Modal */}
+      <AudioDeviceModal
+        isOpen={showDeviceModal}
+        onClose={() => setShowDeviceModal(false)}
+        onConfirm={confirmDeviceSelection}
+        inputDevices={inputDevices}
+        outputDevices={outputDevices}
+        selectedInputDeviceId={selectedInputDeviceId}
+        selectedOutputDeviceId={selectedOutputDeviceId}
+        onInputDeviceChange={setSelectedInputDeviceId}
+        onOutputDeviceChange={setSelectedOutputDeviceId}
+      />
     </main>
   );
 }

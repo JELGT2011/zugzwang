@@ -1,11 +1,10 @@
-import { useStockfish, type MoveAnnotation } from "@/contexts/StockfishContext";
+import { createGameAgentInstructions, createGameAgentTools, GAME_AGENT_NAME } from "@/agents";
+import { useStockfish } from "@/contexts/StockfishContext";
 import { useBoardStore } from "@/stores";
 import { useCoachStore } from "@/stores/coachStore";
-import { OpenAIRealtimeWebRTC, RealtimeAgent, RealtimeSession, tool } from "@openai/agents/realtime";
+import { OpenAIRealtimeWebRTC, RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
 import { Chess, type Move } from "chess.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Arrow } from "react-chessboard";
-import { z } from "zod";
 import { useBoardController } from "./useBoardController";
 
 // ============================================================================
@@ -16,125 +15,12 @@ import { useBoardController } from "./useBoardController";
 const sharedSessionState = {
     session: null as RealtimeSession | null,
     audioElement: null as HTMLAudioElement | null,
+    mediaStream: null as MediaStream | null,
     lastProcessedMove: null as string | null,
     messageQueue: [] as string[],
     isResponseActive: false,
     currentUserTranscript: "",
 };
-
-// Zod schemas for coach tools
-const DrawArrowParameters = z.object({
-    from: z.string().describe('The starting square (e.g., "e2").'),
-    to: z.string().describe('The ending square (e.g., "e4").'),
-    color: z.string().optional().describe('The color of the arrow (e.g., "red", "blue", "green"). Defaults to green.')
-});
-
-const GetTopMovesParameters = z.object({
-    fen: z.string().optional().describe('The FEN position to analyze. Defaults to the current board position if not provided.'),
-    numMoves: z.number().optional().describe('Number of top moves to return (default: 3).'),
-    depth: z.number().optional().describe('Analysis depth (default: 15).')
-});
-
-/**
- * Creates the system instructions for the coach agent
- */
-const createCoachInstructions = (
-    playerRole: string,
-    engineRole: string,
-    moveHistory: string,
-    boardAscii: string
-) => `
-You are a Grandmaster Chess Coach named 'Zuggy'. 
-Your goal is to explain the current state of the game and moves in a clear, engaging, and educational way.
-The human player is playing as ${playerRole} and the computer opponent is playing as ${engineRole}.
-
-ANALYSIS GROUNDING:
-- After every turn, you receive detailed position analysis that includes:
-  * TOP MOVES with evaluations (positive = White advantage, negative = Black advantage)
-  * WHY GOOD: Specific threats created (which piece attacks what)
-  * HANGING PIECES: Opponent pieces that are attacked but undefended
-  * TACTICAL NOTES: Checks, captures, and other important features
-- ALWAYS use this tactical data to explain WHY a move is good or bad, not just that it is.
-- When explaining threats, reference the specific squares and pieces from the analysis.
-
-Board:
-${boardAscii}
-
-Move history: ${moveHistory}
-
-You have tools to interact with the chessboard:
-1. draw_arrow: Visualize threats, attacks, defenses, and ideas on the board.
-2. get_top_moves: Analyze ANY position. Pass a FEN string to analyze hypothetical positions.
-
-IMPORTANT: You are a COACH, not the player. The computer moves are handled by a separate engine. When it's your turn to speak:
-1. Explain WHY the last moves were good/bad using the tactical data (threats, hanging pieces).
-2. MANDATORY: Use draw_arrow to visualize the threats and ideas. NEVER talk without arrows.
-
-ARROW USAGE IS MANDATORY:
-- When the analysis says "knight on f3 attacks pawn on e5", draw a RED arrow from f3 to e5.
-- When a piece is hanging (attacked but undefended), draw a RED arrow to it showing the threat.
-- When suggesting a move, draw a GREEN arrow showing the move.
-- When showing a defensive move, draw a BLUE arrow.
-- EVERY piece or square you mention MUST have a corresponding arrow.
-
-CONCISENESS IS CRITICAL:
-- Your responses are spoken aloud. Keep speech brief (1-2 sentences).
-- Arrow tool calls don't count as verbose—use many arrows to illustrate your points.
-- During the opening (first 10-15 moves), just name the opening unless something unusual happens.
-- Focus on the most important tactical feature: the biggest threat or hanging piece.
-`;
-
-/**
- * Creates the tools available to the coach agent
- */
-function createCoachTools(
-    addArrow: (arrow: Arrow) => void,
-    getTopMoves: (fen: string, numMoves?: number, depth?: number) => Promise<MoveAnnotation[]>,
-    getCurrentFen: () => string
-) {
-    return [
-        tool({
-            name: 'draw_arrow',
-            description: 'Draw a tactical arrow on the chessboard. MANDATORY: Use this whenever you mention a piece, square, threat, or move to provide visual context. Use "red" for threats, "green" for moves/suggestions, and "blue" for positional ideas.',
-            parameters: DrawArrowParameters,
-            strict: true,
-            execute: async ({ from, to, color }: z.infer<typeof DrawArrowParameters>) => {
-                const arrow: Arrow = { startSquare: from, endSquare: to, color: color || "green" };
-                addArrow(arrow);
-                return { status: "success" };
-            }
-        }),
-        tool({
-            name: 'get_top_moves',
-            description: 'Analyze a position and get the top moves with evaluations, threats, and tactical features. Use this to understand WHY a move is good.',
-            parameters: GetTopMovesParameters,
-            strict: true,
-            execute: async ({ fen, numMoves = 3, depth = 15 }: z.infer<typeof GetTopMovesParameters>) => {
-                const targetFen = fen || getCurrentFen();
-                const moves = await getTopMoves(targetFen, numMoves, depth);
-                return {
-                    status: "success",
-                    moves: moves.map(m => ({
-                        move: m.san,
-                        evaluation: m.evaluation,
-                        mate: m.mate,
-                        isCheck: m.isCheck,
-                        isCapture: m.isCapture,
-                        capturedPiece: m.capturedPiece,
-                        // Tactical reasoning
-                        newThreats: m.tactical.threats
-                            .filter(t => t.isNewThreat)
-                            .map(t => `${t.attacker} on ${t.attackerSquare} attacks ${t.target} on ${t.targetSquare}`),
-                        hangingPieces: m.tactical.hanging
-                            .map(h => `${h.piece} on ${h.square} (value: ${h.value})`),
-                        tacticalNotes: m.tactical.notes,
-                        principalVariation: m.principalVariation.slice(0, 4).join(" "),
-                    }))
-                };
-            }
-        })
-    ];
-}
 
 /**
  * CoachController hook - provides a clean interface to the AI coach connection and state.
@@ -153,6 +39,7 @@ export function useCoachController() {
     const selectedInputDeviceId = useCoachStore((state) => state.selectedInputDeviceId);
     const selectedOutputDeviceId = useCoachStore((state) => state.selectedOutputDeviceId);
     const isTestingAudio = useCoachStore((state) => state.isTestingAudio);
+    const isMicMuted = useCoachStore((state) => state.isMicMuted);
     const transcript = useCoachStore((state) => state.transcript);
     const transcriptHistory = useCoachStore((state) => state.transcriptHistory);
 
@@ -163,6 +50,7 @@ export function useCoachController() {
     const setSelectedInputDeviceId = useCoachStore((state) => state.setSelectedInputDeviceId);
     const setSelectedOutputDeviceId = useCoachStore((state) => state.setSelectedOutputDeviceId);
     const setIsTestingAudio = useCoachStore((state) => state.setIsTestingAudio);
+    const setIsMicMuted = useCoachStore((state) => state.setIsMicMuted);
     const setTranscript = useCoachStore((state) => state.setTranscript);
     const addToHistory = useCoachStore((state) => state.addToHistory);
     const clearHistory = useCoachStore((state) => state.clearHistory);
@@ -199,13 +87,18 @@ export function useCoachController() {
             sharedSessionState.audioElement.srcObject = null;
             sharedSessionState.audioElement = null;
         }
+        if (sharedSessionState.mediaStream) {
+            sharedSessionState.mediaStream.getTracks().forEach((t) => t.stop());
+            sharedSessionState.mediaStream = null;
+        }
         // Reset state tracking
         sharedSessionState.isResponseActive = false;
         sharedSessionState.messageQueue = [];
         sharedSessionState.lastProcessedMove = null;
 
         setConnectionState("disconnected");
-    }, [setConnectionState]);
+        setIsMicMuted(true); // Reset to muted state
+    }, [setConnectionState, setIsMicMuted]);
 
     const testAudio = useCallback(async () => {
         setIsTestingAudio(true);
@@ -320,6 +213,13 @@ export function useCoachController() {
                     audio: audioConstraints,
                 });
 
+                // Store mediaStream and start with mic muted
+                sharedSessionState.mediaStream = mediaStream;
+                mediaStream.getAudioTracks().forEach((track) => {
+                    track.enabled = false; // Start muted
+                });
+                setIsMicMuted(true);
+
                 // Create an audio element for playback
                 const audioElement = new Audio();
                 audioElement.autoplay = true;
@@ -345,14 +245,14 @@ export function useCoachController() {
                     volume: audioElement.volume,
                 });
 
-                // Create the coach agent
+                // Create the Game Agent (coach for live games)
                 const playerRole = playerColor === 'w' ? 'White' : 'Black';
                 const engineRole = playerColor === 'w' ? 'Black' : 'White';
 
                 const agent = new RealtimeAgent({
-                    name: 'Zuggy',
-                    instructions: createCoachInstructions(playerRole, engineRole, moveHistory, boardAscii),
-                    tools: createCoachTools(addArrow, getTopMoves, getFen),
+                    name: GAME_AGENT_NAME,
+                    instructions: createGameAgentInstructions(playerRole, engineRole, moveHistory, boardAscii),
+                    tools: createGameAgentTools(addArrow, getTopMoves, getFen),
                 });
 
                 // Instantiate transport with the specific media stream and audio element
@@ -517,6 +417,7 @@ export function useCoachController() {
             getFen,
             connectionState,
             setConnectionState,
+            setIsMicMuted,
             setTranscript,
             addToHistory,
             cleanupSession,
@@ -540,6 +441,21 @@ export function useCoachController() {
             sharedSessionState.session.sendMessage(message);
         }
     }, []);
+
+    // Toggle microphone mute state (for transcription)
+    const toggleMic = useCallback(() => {
+        if (!sharedSessionState.mediaStream) {
+            console.warn("[toggleMic] No active media stream");
+            return;
+        }
+
+        const newMutedState = !isMicMuted;
+        sharedSessionState.mediaStream.getAudioTracks().forEach((track) => {
+            track.enabled = !newMutedState; // enabled = !muted
+        });
+        setIsMicMuted(newMutedState);
+        console.debug(`[Mic] ${newMutedState ? "Muted" : "Unmuted"} (transcription ${newMutedState ? "stopped" : "started"})`);
+    }, [isMicMuted, setIsMicMuted]);
 
     const updateLastProcessedMove = useCallback((move: string) => {
         sharedSessionState.lastProcessedMove = move;
@@ -594,6 +510,7 @@ export function useCoachController() {
         selectedInputDeviceId,
         selectedOutputDeviceId,
         isTestingAudio,
+        isMicMuted,
         transcript,
         transcriptHistory,
         showDeviceModal,
@@ -609,6 +526,7 @@ export function useCoachController() {
         setSelectedOutputDeviceId,
         setShowDeviceModal,
         sendMessage,
+        toggleMic,
         updateLastProcessedMove,
         getLastProcessedMove,
         clearHistory,
@@ -773,6 +691,10 @@ export function useCoachSession() {
                 sharedSessionState.audioElement.pause();
                 sharedSessionState.audioElement.srcObject = null;
                 sharedSessionState.audioElement = null;
+            }
+            if (sharedSessionState.mediaStream) {
+                sharedSessionState.mediaStream.getTracks().forEach((t) => t.stop());
+                sharedSessionState.mediaStream = null;
             }
             sharedSessionState.isResponseActive = false;
             sharedSessionState.messageQueue = [];
