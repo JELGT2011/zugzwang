@@ -87,7 +87,6 @@ export default function PuzzlePage() {
     selectedOutputDeviceId,
     requestHint: agentRequestHint,
     confirmDeviceSelection,
-    cleanupSession,
     setSelectedInputDeviceId,
     setSelectedOutputDeviceId,
     setShowDeviceModal,
@@ -112,6 +111,16 @@ export default function PuzzlePage() {
   
   // Track if we've auto-triggered the first hint for this puzzle
   const autoHintTriggeredRef = useRef<string | null>(null);
+
+  // Reset UI state when puzzle ID changes (handles client-side navigation)
+  useEffect(() => {
+    // Reset all puzzle-specific state when URL changes
+    setEloResult(null);
+    eloRecordedForPuzzleRef.current = null;
+    autoHintTriggeredRef.current = null;
+    clearArrows();
+    clearHistory();
+  }, [puzzleId, clearArrows, clearHistory]);
 
   // Load single puzzle from Firestore
   const loadPuzzle = useCallback(async () => {
@@ -484,11 +493,12 @@ export default function PuzzlePage() {
               <div className="flex flex-col gap-2">
                 <Button
                   onClick={() => {
-                    // Cleanup before navigating to new puzzle
+                    // Reset local state before navigating
+                    // Note: Don't call cleanupSession() - we'll reuse the WebRTC connection
+                    // via agent handoff when the new puzzle loads
                     setEloResult(null);
                     eloRecordedForPuzzleRef.current = null;
                     autoHintTriggeredRef.current = null;
-                    cleanupSession();
                     clearArrows();
                     clearHistory();
                     goToRandomPuzzle();
@@ -511,8 +521,8 @@ export default function PuzzlePage() {
                 <Button
                   variant="outline"
                   onClick={() => {
+                    // Reset for retry - keep WebRTC connection, just clear visuals
                     autoHintTriggeredRef.current = null; // Reset so auto-hint triggers again
-                    cleanupSession();
                     clearArrows();
                     clearHistory();
                     resetPuzzle();

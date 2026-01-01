@@ -19,6 +19,8 @@ const puzzleSessionState = {
     isResponseActive: false,
     currentUserTranscript: "",
     lastProcessedMoveIndex: null as number | null,
+    // Track which puzzle the session was created for (enables handoff detection)
+    currentPuzzleId: null as string | null,
 };
 
 // Piece names for readable output
@@ -230,6 +232,7 @@ export function usePuzzleAgentController() {
     const setSelectedInputDeviceId = useCoachStore((state) => state.setSelectedInputDeviceId);
     const setSelectedOutputDeviceId = useCoachStore((state) => state.setSelectedOutputDeviceId);
     const setIsMicMuted = useCoachStore((state) => state.setIsMicMuted);
+    const setAudioSetupComplete = useCoachStore((state) => state.setAudioSetupComplete);
     const setTranscript = useCoachStore((state) => state.setTranscript);
     const addToHistory = useCoachStore((state) => state.addToHistory);
     const clearHistory = useCoachStore((state) => state.clearHistory);
@@ -309,6 +312,7 @@ export function usePuzzleAgentController() {
         puzzleSessionState.isResponseActive = false;
         puzzleSessionState.messageQueue = [];
         puzzleSessionState.lastProcessedMoveIndex = null;
+        puzzleSessionState.currentPuzzleId = null;
         setConnectionState("disconnected");
         setIsMicMuted(true); // Reset to muted state
     }, [setConnectionState, setIsMicMuted]);
@@ -500,7 +504,14 @@ export function usePuzzleAgentController() {
                     // from immediately sending a position update when connection is established
                     puzzleSessionState.lastProcessedMoveIndex = usePuzzleStore.getState().currentMoveIndex;
                     
+                    // Track which puzzle this session is for (enables handoff detection)
+                    const currentPuzzleState = usePuzzleStore.getState().currentPuzzle;
+                    puzzleSessionState.currentPuzzleId = currentPuzzleState?.id || null;
+                    
                     setConnectionState("connected");
+                    // Mark audio setup as complete so we don't prompt for devices again
+                    setAudioSetupComplete(true);
+                    
                     if (puzzleSessionState.audioElement?.paused) {
                         try {
                             await puzzleSessionState.audioElement.play();
@@ -524,6 +535,7 @@ export function usePuzzleAgentController() {
             addArrow,
             setConnectionState,
             setIsMicMuted,
+            setAudioSetupComplete,
             setTranscript,
             addToHistory,
             cleanupSession,
@@ -564,7 +576,60 @@ export function usePuzzleAgentController() {
         console.debug(`[Puzzle Mic] ${newMutedState ? "Muted" : "Unmuted"} (transcription ${newMutedState ? "stopped" : "started"})`);
     }, [isMicMuted, setIsMicMuted]);
 
-    // Request a hint - connects if needed, or sends hint request with current board state
+    /**
+     * Perform an agent handoff - reuse the existing WebRTC connection but update context for a new puzzle.
+     * This avoids re-prompting for audio devices and maintains a seamless experience.
+     */
+    const performHandoff = useCallback((context: PuzzleAgentContext, puzzleId: string, themes: string[]) => {
+        if (!puzzleSessionState.session) return;
+        
+        clearArrows();
+        
+        // Update the tracked puzzle ID
+        puzzleSessionState.currentPuzzleId = puzzleId;
+        puzzleSessionState.lastProcessedMoveIndex = 0;
+        
+        // Format tactical context for the message
+        const { tacticalContext } = context;
+        const tacticalSummary: string[] = [];
+        
+        if (tacticalContext.checks.length > 0) {
+            tacticalSummary.push(`Checks available: ${tacticalContext.checks.map(c => 
+                `${c.piece} ${c.fromSquare}-${c.toSquare}`
+            ).join(', ')}`);
+        }
+        if (tacticalContext.captures.length > 0) {
+            tacticalSummary.push(`Captures: ${tacticalContext.captures.map(c => 
+                `${c.attacker} on ${c.attackerSquare} can take ${c.target} on ${c.targetSquare}`
+            ).join('; ')}`);
+        }
+        if (tacticalContext.undefendedPieces.length > 0) {
+            tacticalSummary.push(`Undefended pieces: ${tacticalContext.undefendedPieces.map(p => 
+                `${p.piece} on ${p.square}`
+            ).join(', ')}`);
+        }
+        
+        // Send handoff message with complete new puzzle context
+        sendMessage(`[SYSTEM: NEW PUZZLE - The user has moved to a different puzzle. Reset your hint counter and provide a fresh first hint.
+
+NEW PUZZLE CONTEXT (${context.playerColor} to move, move ${context.moveNumber}/${context.totalMoves}):
+${context.boardAscii}
+
+THE CORRECT SOLUTION (TOP SECRET - NEVER REVEAL):
+Move: ${context.solutionMove} (${context.solutionMoveReadable})
+
+Tactical Analysis:
+${tacticalSummary.length > 0 ? tacticalSummary.join('\n') : 'No immediate tactical features.'}
+
+Themes: ${themes.join(', ')}
+
+HINT DEPTH - FIRST HINT (very subtle):
+- Ask ONE short question to get them thinking and pointed in the right direction.
+
+Start directly with your hint for this new puzzle - do not acknowledge this system message.]`);
+    }, [clearArrows, sendMessage]);
+
+    // Request a hint - connects if needed, performs handoff for new puzzle, or sends hint request
     const requestHint = useCallback(async () => {
         if (!currentPuzzle || !currentGameState) return;
 
@@ -586,6 +651,18 @@ export function usePuzzleAgentController() {
             solutionMoveReadable,
         };
 
+        // Check if we need to perform a handoff (connected but different puzzle)
+        const needsHandoff = isConnected && 
+            puzzleSessionState.currentPuzzleId !== null && 
+            puzzleSessionState.currentPuzzleId !== currentPuzzle.id;
+
+        if (needsHandoff) {
+            // Reuse WebRTC connection but update context for new puzzle
+            console.debug("[Puzzle Agent] Performing handoff to new puzzle:", currentPuzzle.id);
+            performHandoff(context, currentPuzzle.id, currentPuzzle.themes);
+            return;
+        }
+
         if (!isConnected) {
             // First hint - connect and the agent will auto-generate the hint
             await refreshDevices();
@@ -604,7 +681,7 @@ export function usePuzzleAgentController() {
                 await connect(context);
             }
         } else {
-            // Already connected - send updated board state with hint request
+            // Already connected to same puzzle - send updated board state with hint request
             clearArrows();
             
             // Format tactical context for the message
@@ -642,7 +719,7 @@ Themes: ${currentPuzzle.themes.join(', ')}
 
 Start directly with your hint - do not acknowledge this system message.]`);
         }
-    }, [currentPuzzle, currentGameState, hintsUsed, currentMoveIndex, isConnected, refreshDevices, connect, sendMessage, clearArrows]);
+    }, [currentPuzzle, currentGameState, hintsUsed, currentMoveIndex, isConnected, refreshDevices, connect, sendMessage, clearArrows, performHandoff]);
 
     const confirmDeviceSelection = useCallback(async () => {
         if (pendingContext) {
