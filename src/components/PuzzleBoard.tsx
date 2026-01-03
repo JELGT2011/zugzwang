@@ -389,6 +389,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
             onPieceClick: (args) => onPieceClick(args),
             onSquareClick: (args) => onSquareClick(args),
             allowDragging: moveMethod !== "click",
+            dragActivationDistance: 5, // Allow taps to register as clicks on mobile
             boardOrientation: boardOrientation,
             animationDurationInMs: 200,
             arrows: arrows,

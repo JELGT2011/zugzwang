@@ -240,6 +240,7 @@ export default function ChessGame() {
                 onPieceClick: (args) => onPieceClick(args),
                 onSquareClick: (args) => onSquareClick(args),
                 allowDragging: moveMethod !== "click",
+                dragActivationDistance: 5, // Allow taps to register as clicks on mobile
                 boardOrientation: playerColor === "w" ? "white" : "black",
                 animationDurationInMs: 200,
                 arrows: arrows,
