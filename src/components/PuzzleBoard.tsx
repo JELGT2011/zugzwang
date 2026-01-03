@@ -313,17 +313,53 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
     };
   }, []);
 
+  // Compute legal moves for selected piece
+  const legalMoveSquares = useMemo(() => {
+    if (!selectedSquare) return {};
+
+    const styles: Record<string, React.CSSProperties> = {};
+
+    try {
+      const moves = game.moves({
+        square: selectedSquare as Parameters<typeof game.moves>[0]["square"],
+        verbose: true,
+      });
+
+      for (const move of moves) {
+        // Check if there's a piece on the target square (capture)
+        const targetPiece = game.get(move.to);
+        if (targetPiece) {
+          // Capture highlight - ring/border style
+          styles[move.to] = {
+            background: "radial-gradient(transparent 0%, transparent 79%, rgba(20, 85, 30, 0.4) 80%)",
+            borderRadius: "50%",
+          };
+        } else {
+          // Empty square - dot in center
+          styles[move.to] = {
+            background: "radial-gradient(rgba(20, 85, 30, 0.4) 25%, transparent 25%)",
+            borderRadius: "50%",
+          };
+        }
+      }
+    } catch {
+      // Ignore errors from invalid squares
+    }
+
+    return styles;
+  }, [game, selectedSquare]);
+
   // Combine square styles
   const squareStyles = useMemo(() => {
-    const styles = { ...lastMoveSquares, ...moveHighlightSquares };
+    const styles = { ...lastMoveSquares, ...legalMoveSquares, ...moveHighlightSquares };
 
-    // Add selected square highlight
+    // Add selected square highlight (on top of everything)
     if (selectedSquare) {
       styles[selectedSquare] = { backgroundColor: "rgba(20, 85, 30, 0.5)" };
     }
 
     return styles;
-  }, [lastMoveSquares, moveHighlightSquares, selectedSquare]);
+  }, [lastMoveSquares, legalMoveSquares, moveHighlightSquares, selectedSquare]);
 
   // Get status text
   const statusText = useMemo(() => {
