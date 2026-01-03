@@ -5,3 +5,4 @@ export { useMoveController } from "./useMoveController";
 export { usePuzzleAgentController } from "./usePuzzleAgentController";
 export { useRandomPuzzle } from "./useRandomPuzzle";
 export { useUserProfile } from "./useUserProfile";
+export { useVictoryEffects } from "./useVictoryEffects";

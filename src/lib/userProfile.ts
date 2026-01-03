@@ -13,6 +13,7 @@ import {
   Familiarity,
   ELO_DEFAULTS,
   UserElos,
+  GameplaySettings,
 } from "@/types/user";
 
 /**
@@ -87,6 +88,27 @@ export async function updateUserElo(
     [`elos.${category}`]: newElo,
     updatedAt: Timestamp.now(),
   });
+}
+
+/**
+ * Update a user's gameplay settings
+ */
+export async function updateGameplaySettings(
+  userId: string,
+  settings: Partial<GameplaySettings>
+): Promise<void> {
+  const docRef = doc(db, "users", userId);
+
+  const updates: Record<string, unknown> = {
+    updatedAt: Timestamp.now(),
+  };
+
+  // Update each setting individually to allow partial updates
+  for (const [key, value] of Object.entries(settings)) {
+    updates[`gameplay.${key}`] = value;
+  }
+
+  await updateDoc(docRef, updates);
 }
 
 /**

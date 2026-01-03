@@ -11,6 +11,7 @@ import { useAttemptedPuzzles } from "@/hooks/useAttemptedPuzzles";
 import { usePuzzleAgentController } from "@/hooks/usePuzzleAgentController";
 import { useRandomPuzzle } from "@/hooks/useRandomPuzzle";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useVictoryEffects } from "@/hooks/useVictoryEffects";
 import { calculateNewElo, calculateRatingDelta, getPuzzleResult, type GameResult } from "@/lib/elo";
 import { fetchPuzzleById, fetchAllPuzzles } from "@/lib/puzzles";
 import { updateUserElo } from "@/lib/userProfile";
@@ -62,6 +63,9 @@ export default function PuzzlePage() {
   } = usePuzzleStore();
 
   const { profile } = useUserProfile();
+
+  // Victory effects (sound + confetti)
+  const { triggerVictory } = useVictoryEffects();
   
   // Track attempted puzzles
   const { attemptedPuzzleIds, markAttempted } = useAttemptedPuzzles();
@@ -111,10 +115,15 @@ export default function PuzzlePage() {
   
   // Track if we've auto-triggered the first hint for this puzzle
   const autoHintTriggeredRef = useRef<string | null>(null);
+  
+  // Track if we've triggered victory effects for this puzzle
+  const victoryTriggeredRef = useRef<string | null>(null);
 
   // Reset UI state when puzzle ID changes (handles client-side navigation)
   useEffect(() => {
     // Reset all puzzle-specific state when URL changes
+    // Note: Don't reset victoryTriggeredRef here - it's checked against puzzle.id
+    // in the victory effect, so resetting it here causes double-trigger during navigation
     setEloResult(null);
     eloRecordedForPuzzleRef.current = null;
     autoHintTriggeredRef.current = null;
@@ -221,6 +230,24 @@ export default function PuzzlePage() {
     // Request the first hint automatically
     handleHint();
   }, [puzzle, puzzleStatus, agentConnecting, agentConnected, handleHint]);
+
+  // Trigger victory effects when puzzle is solved
+  useEffect(() => {
+    // Guard: only trigger once per puzzle ID
+    if (puzzleStatus !== "success" || !puzzle) return;
+    if (victoryTriggeredRef.current === puzzle.id) return;
+    
+    // Set ref immediately to prevent double-trigger from StrictMode or re-renders
+    victoryTriggeredRef.current = puzzle.id;
+    
+    // Small delay to ensure state is settled and avoid race conditions
+    const timer = setTimeout(() => {
+      triggerVictory();
+    }, 50);
+    
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [puzzleStatus, puzzle?.id]);
 
   // Record ELO when puzzle is completed (success or solution shown)
   useEffect(() => {
@@ -365,11 +392,11 @@ export default function PuzzlePage() {
           <div className="lg:w-[320px] shrink-0 space-y-4">
             {/* Status Card - only show for success/failed states */}
             {(puzzleStatus === "success" || puzzleStatus === "failed") && (
-              <Card className="p-4 bg-card/50 backdrop-blur border-border/50">
+              <Card className="p-4 bg-card/50 backdrop-blur border-border/50 animate-in fade-in-0 zoom-in-95 duration-300">
                 <div className="text-center py-3">
                   {puzzleStatus === "success" && (
                     <div className="space-y-2">
-                      <Trophy className="w-12 h-12 mx-auto text-success" />
+                      <Trophy className="w-12 h-12 mx-auto text-success victory-bounce victory-glow" />
                       <p className="text-lg font-medium text-success">
                         Puzzle Solved!
                       </p>

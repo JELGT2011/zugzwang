@@ -2,8 +2,8 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { createUserProfile, updateUserProfile } from "@/lib/userProfile";
-import { Familiarity, UserProfile } from "@/types/user";
+import { createUserProfile, updateUserProfile, updateGameplaySettings } from "@/lib/userProfile";
+import { Familiarity, UserProfile, MoveMethod, DEFAULT_GAMEPLAY_SETTINGS } from "@/types/user";
 import { doc, onSnapshot, Unsubscribe } from "firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -18,6 +18,9 @@ interface UseUserProfileReturn {
   loading: boolean;
   error: Error | null;
   setFamiliarity: (familiarity: Familiarity) => Promise<void>;
+  setMoveMethod: (moveMethod: MoveMethod) => Promise<void>;
+  /** The user's preferred move method, defaults to "both" */
+  moveMethod: MoveMethod;
   /** True when user is logged in, profile is loaded, but no profile exists yet */
   needsFamiliaritySelection: boolean;
 }
@@ -102,6 +105,29 @@ export function useUserProfile(): UseUserProfileReturn {
     [user, state.profile]
   );
 
+  // Update move method preference
+  const setMoveMethod = useCallback(
+    async (moveMethod: MoveMethod) => {
+      if (!user) {
+        throw new Error("User must be authenticated to set move method");
+      }
+
+      try {
+        await updateGameplaySettings(user.uid, { moveMethod });
+      } catch (err) {
+        const error =
+          err instanceof Error ? err : new Error("Failed to set move method");
+        setState((prev) => ({ ...prev, error }));
+        throw err;
+      }
+    },
+    [user]
+  );
+
+  // Get the current move method, defaulting to "both"
+  const moveMethod: MoveMethod =
+    state.profile?.gameplay?.moveMethod ?? DEFAULT_GAMEPLAY_SETTINGS.moveMethod;
+
   // User needs to select familiarity if:
   // - User is logged in
   // - Profile has been loaded (not loading)
@@ -114,6 +140,8 @@ export function useUserProfile(): UseUserProfileReturn {
     loading,
     error: state.error,
     setFamiliarity,
+    setMoveMethod,
+    moveMethod,
     needsFamiliaritySelection,
   };
 }

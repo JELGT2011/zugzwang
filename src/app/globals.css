@@ -158,6 +158,39 @@ body {
   text-shadow: 0 0 8px rgba(204, 36, 29, 0.5);
 }
 
+/* Victory celebration animation */
+@keyframes victory-bounce {
+  0%, 100% { 
+    transform: scale(1) rotate(0deg);
+  }
+  25% { 
+    transform: scale(1.2) rotate(-5deg);
+  }
+  50% { 
+    transform: scale(1.15) rotate(5deg);
+  }
+  75% { 
+    transform: scale(1.1) rotate(-3deg);
+  }
+}
+
+.victory-bounce {
+  animation: victory-bounce 0.6s ease-out;
+}
+
+@keyframes victory-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px rgba(152, 151, 26, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px rgba(152, 151, 26, 0.7));
+  }
+}
+
+.victory-glow {
+  animation: victory-glow 1.5s ease-in-out infinite;
+}
+
 /* Thinking animation */
 @keyframes thinking-dot {
   0%, 20% { opacity: 0; }

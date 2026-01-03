@@ -1,7 +1,9 @@
 "use client";
 
+import BoardSettingsPopover from "@/components/BoardSettingsPopover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useUserProfile } from "@/hooks/useUserProfile";
 import { usePuzzleStore } from "@/stores";
 import type { Puzzle } from "@/types/puzzle";
 import { Chess, Move as ChessMove } from "chess.js";
@@ -52,6 +54,9 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
     makeMove: storeMakeMove,
     advanceMoveIndex,
   } = usePuzzleStore();
+
+  // User profile for move method preference
+  const { moveMethod } = useUserProfile();
 
   // Track puzzle ID to detect changes
   const [currentPuzzleId, setCurrentPuzzleId] = useState(puzzle.id);
@@ -230,19 +235,23 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
       sourceSquare: string;
       targetSquare: string | null;
     }): boolean => {
+      if (moveMethod === "click") {
+        return false; // Disable drag when click-only mode
+      }
+
       if (!targetSquare) {
         return false;
       }
       setSelectedSquare(null);
       return tryMove(sourceSquare, targetSquare);
     },
-    [tryMove]
+    [moveMethod, tryMove]
   );
 
   // Handle piece click (click to move - first click)
   const onPieceClick = useCallback(
     ({ square }: { isSparePiece: boolean; piece: { pieceType: string }; square: string | null }) => {
-      if (puzzleStatus !== "playing" || isAnimating || !square) {
+      if (moveMethod === "drag" || puzzleStatus !== "playing" || isAnimating || !square) {
         return;
       }
 
@@ -277,13 +286,13 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
       // Select this piece
       setSelectedSquare(square);
     },
-    [game, puzzleStatus, currentMoveIndex, isAnimating, boardOrientation, selectedSquare, tryMove]
+    [moveMethod, game, puzzleStatus, currentMoveIndex, isAnimating, boardOrientation, selectedSquare, tryMove]
   );
 
   // Handle square click (click to move - second click)
   const onSquareClick = useCallback(
     ({ square }: { piece: { pieceType: string } | null; square: string }) => {
-      if (puzzleStatus !== "playing" || isAnimating) {
+      if (moveMethod === "drag" || puzzleStatus !== "playing" || isAnimating) {
         return;
       }
 
@@ -301,7 +310,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
       // Try to make the move
       tryMove(selectedSquare, square);
     },
-    [puzzleStatus, isAnimating, selectedSquare, tryMove]
+    [moveMethod, puzzleStatus, isAnimating, selectedSquare, tryMove]
   );
 
   // Cleanup timeout on unmount
@@ -315,7 +324,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
 
   // Compute legal moves for selected piece
   const legalMoveSquares = useMemo(() => {
-    if (!selectedSquare) return {};
+    if (!selectedSquare || moveMethod === "drag") return {};
 
     const styles: Record<string, React.CSSProperties> = {};
 
@@ -347,19 +356,19 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
     }
 
     return styles;
-  }, [game, selectedSquare]);
+  }, [game, selectedSquare, moveMethod]);
 
   // Combine square styles
   const squareStyles = useMemo(() => {
     const styles = { ...lastMoveSquares, ...legalMoveSquares, ...moveHighlightSquares };
 
     // Add selected square highlight (on top of everything)
-    if (selectedSquare) {
+    if (selectedSquare && moveMethod !== "drag") {
       styles[selectedSquare] = { backgroundColor: "rgba(20, 85, 30, 0.5)" };
     }
 
     return styles;
-  }, [lastMoveSquares, legalMoveSquares, moveHighlightSquares, selectedSquare]);
+  }, [lastMoveSquares, legalMoveSquares, moveHighlightSquares, selectedSquare, moveMethod]);
 
   // Get status text
   const statusText = useMemo(() => {
@@ -379,6 +388,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
             onPieceDrop: (args) => onDrop(args),
             onPieceClick: (args) => onPieceClick(args),
             onSquareClick: (args) => onSquareClick(args),
+            allowDragging: moveMethod !== "click",
             boardOrientation: boardOrientation,
             animationDurationInMs: 200,
             arrows: arrows,
@@ -393,35 +403,41 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
         />
 
         {/* Overlay for completed/failed state */}
-        {(puzzleStatus === "success" || puzzleStatus === "failed") && (
+        {puzzleStatus === "success" && (
+          <div className="absolute inset-0 bg-gradient-to-t from-success/20 to-transparent pointer-events-none animate-in fade-in-0 duration-500" />
+        )}
+        {puzzleStatus === "failed" && (
           <div className="absolute inset-0 bg-black/20 pointer-events-none" />
         )}
       </div>
 
       {/* Status */}
-      <div className="flex items-center justify-center gap-3">
-        <Badge
-          variant="outline"
-          className={`px-4 py-1.5 text-sm ${puzzleStatus === "success"
-              ? "border-success text-success"
-              : puzzleStatus === "failed"
-                ? "border-destructive text-destructive"
-                : ""
-            }`}
-        >
-          {statusText}
-        </Badge>
-        {puzzleStatus === "playing" && onHintRequest && (
-          <Button
+      <div className="flex items-center relative">
+        <div className="flex items-center justify-center gap-3 flex-1">
+          <Badge
             variant="outline"
-            size="sm"
-            onClick={onHintRequest}
-            className="gap-1.5"
+            className={`px-4 py-1.5 text-sm transition-all ${puzzleStatus === "success"
+                ? "border-success text-success animate-in zoom-in-95 duration-300"
+                : puzzleStatus === "failed"
+                  ? "border-destructive text-destructive"
+                  : ""
+              }`}
           >
-            <Lightbulb className="h-4 w-4" />
-            Hint
-          </Button>
-        )}
+            {statusText}
+          </Badge>
+          {puzzleStatus === "playing" && onHintRequest && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onHintRequest}
+              className="gap-1.5"
+            >
+              <Lightbulb className="h-4 w-4" />
+              Hint
+            </Button>
+          )}
+        </div>
+        <BoardSettingsPopover className="h-8 w-8 absolute right-0" />
       </div>
     </div>
   );
