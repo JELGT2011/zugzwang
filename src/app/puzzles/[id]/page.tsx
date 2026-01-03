@@ -357,7 +357,7 @@ export default function PuzzlePage() {
           {/* Puzzle Board */}
           <div className="flex-1 min-w-0 flex justify-center">
             <div className="w-full max-w-[600px]">
-              <PuzzleBoard puzzle={puzzle} externalArrows={agentArrows} />
+              <PuzzleBoard puzzle={puzzle} externalArrows={agentArrows} onHintRequest={handleHint} />
             </div>
           </div>
 

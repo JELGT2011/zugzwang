@@ -1,23 +1,26 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { usePuzzleStore } from "@/stores";
 import type { Puzzle } from "@/types/puzzle";
 import { Chess, Move as ChessMove } from "chess.js";
+import { Lightbulb } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Chessboard } from "react-chessboard";
 import type { Arrow } from "react-chessboard";
+import { Chessboard } from "react-chessboard";
 
 interface PuzzleBoardProps {
   puzzle: Puzzle;
   externalArrows?: Arrow[];
+  onHintRequest?: () => void;
 }
 
 // Helper to initialize game state from puzzle
 function initializeGameFromPuzzle(puzzle: Puzzle): { game: Chess; setupMoveSquares: Record<string, React.CSSProperties> } {
   const game = new Chess(puzzle.fen);
   let setupMoveSquares: Record<string, React.CSSProperties> = {};
-  
+
   if (puzzle.moves.length > 0) {
     const setupMove = puzzle.moves[0];
     try {
@@ -26,7 +29,7 @@ function initializeGameFromPuzzle(puzzle: Puzzle): { game: Chess; setupMoveSquar
         to: setupMove.slice(2, 4),
         promotion: setupMove.length > 4 ? setupMove[4] : undefined,
       });
-      
+
       if (move) {
         setupMoveSquares = {
           [move.from]: { backgroundColor: "rgba(255, 210, 77, 0.5)" },
@@ -37,11 +40,11 @@ function initializeGameFromPuzzle(puzzle: Puzzle): { game: Chess; setupMoveSquar
       console.error("Failed to apply setup move:", e);
     }
   }
-  
+
   return { game, setupMoveSquares };
 }
 
-export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoardProps) {
+export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest }: PuzzleBoardProps) {
   const {
     currentMoveIndex,
     puzzleStatus,
@@ -52,13 +55,14 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
 
   // Track puzzle ID to detect changes
   const [currentPuzzleId, setCurrentPuzzleId] = useState(puzzle.id);
-  
+
   // Local game state - initialize with puzzle
   const initialState = useMemo(() => initializeGameFromPuzzle(puzzle), [puzzle]);
   const [game, setGame] = useState<Chess>(initialState.game);
   const [lastMoveSquares, setLastMoveSquares] = useState<Record<string, React.CSSProperties>>(initialState.setupMoveSquares);
   const [moveHighlightSquares, setMoveHighlightSquares] = useState<Record<string, React.CSSProperties>>({});
   const [isAnimating, setIsAnimating] = useState(false);
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const moveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Reset game when puzzle changes
@@ -67,6 +71,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
     setGame(newGame);
     setLastMoveSquares(setupMoveSquares);
     setMoveHighlightSquares({});
+    setSelectedSquare(null);
     setCurrentPuzzleId(puzzle.id);
   }
 
@@ -93,7 +98,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
     if (moveIndex >= puzzle.moves.length) return;
 
     const opponentMoveUci = puzzle.moves[moveIndex];
-    
+
     setGame((prevGame) => {
       const newGame = new Chess(prevGame.fen());
       try {
@@ -102,7 +107,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
           to: opponentMoveUci.slice(2, 4),
           promotion: opponentMoveUci.length > 4 ? opponentMoveUci[4] : undefined,
         });
-        
+
         if (move) {
           setLastMoveSquares({
             [move.from]: { backgroundColor: "rgba(255, 210, 77, 0.5)" },
@@ -114,21 +119,17 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
       }
       return newGame;
     });
-    
+
     // Advance the store's move index so the next player move is checked correctly
     advanceMoveIndex();
-    
+
     setIsAnimating(false);
   }, [puzzle.moves, advanceMoveIndex]);
-
-  // Note: We intentionally don't auto-highlight the piece to move based on hints.
-  // The coach should provide verbal/textual hints and use arrows sparingly.
-  // Auto-highlighting the solution piece would give away too much.
 
   // Derive solution arrows from state (no effect needed)
   const arrows = useMemo(() => {
     const allArrows: Arrow[] = [...externalArrows];
-    
+
     if (showSolution && puzzleStatus === "failed") {
       const remainingMoves = puzzle.moves.slice(currentMoveIndex);
       const solutionArrows: Arrow[] = remainingMoves
@@ -139,22 +140,16 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
           endSquare: move.slice(2, 4),
           color: i === 0 ? "rgb(69, 133, 136)" : "rgba(69, 133, 136, 0.5)",
         }));
-      
+
       allArrows.push(...solutionArrows);
     }
     return allArrows;
   }, [showSolution, puzzleStatus, currentMoveIndex, puzzle.moves, externalArrows]);
 
-  // Handle piece drop
-  const onDrop = useCallback(
-    ({
-      sourceSquare,
-      targetSquare,
-    }: {
-      sourceSquare: string;
-      targetSquare: string | null;
-    }): boolean => {
-      if (puzzleStatus !== "playing" || isAnimating || !targetSquare) {
+  // Core move logic shared by drag and click
+  const tryMove = useCallback(
+    (sourceSquare: string, targetSquare: string): boolean => {
+      if (puzzleStatus !== "playing" || isAnimating) {
         return false;
       }
 
@@ -185,7 +180,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
 
       // Convert to UCI format for comparison
       const uciMove = sourceSquare + targetSquare + (moveResult.promotion || "");
-      
+
       // Check with the store
       const { correct, complete } = storeMakeMove(uciMove);
 
@@ -197,6 +192,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
           [moveResult.to]: { backgroundColor: "rgba(152, 151, 26, 0.5)" },
         });
         setMoveHighlightSquares({});
+        setSelectedSquare(null);
 
         if (!complete) {
           // Schedule opponent's response
@@ -213,7 +209,8 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
           [sourceSquare]: { backgroundColor: "rgba(204, 36, 29, 0.5)" },
           [targetSquare]: { backgroundColor: "rgba(204, 36, 29, 0.5)" },
         });
-        
+        setSelectedSquare(null);
+
         setTimeout(() => {
           setMoveHighlightSquares({});
         }, 500);
@@ -222,6 +219,89 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
       }
     },
     [game, puzzleStatus, currentMoveIndex, isAnimating, storeMakeMove, applyOpponentMove]
+  );
+
+  // Handle piece drop (drag and drop)
+  const onDrop = useCallback(
+    ({
+      sourceSquare,
+      targetSquare,
+    }: {
+      sourceSquare: string;
+      targetSquare: string | null;
+    }): boolean => {
+      if (!targetSquare) {
+        return false;
+      }
+      setSelectedSquare(null);
+      return tryMove(sourceSquare, targetSquare);
+    },
+    [tryMove]
+  );
+
+  // Handle piece click (click to move - first click)
+  const onPieceClick = useCallback(
+    ({ square }: { isSparePiece: boolean; piece: { pieceType: string }; square: string | null }) => {
+      if (puzzleStatus !== "playing" || isAnimating || !square) {
+        return;
+      }
+
+      // Check if it's the player's turn
+      const isPlayerTurn = currentMoveIndex % 2 === 1;
+      if (!isPlayerTurn) {
+        return;
+      }
+
+      // Get the piece on this square
+      const piece = game.get(square as Parameters<typeof game.get>[0]);
+      if (!piece) {
+        return;
+      }
+
+      // Only allow selecting pieces of the current player's color
+      const playerColor = boardOrientation === "white" ? "w" : "b";
+      if (piece.color !== playerColor) {
+        // If we have a selected piece, try to capture
+        if (selectedSquare) {
+          tryMove(selectedSquare, square);
+        }
+        return;
+      }
+
+      // If clicking the same square, deselect
+      if (selectedSquare === square) {
+        setSelectedSquare(null);
+        return;
+      }
+
+      // Select this piece
+      setSelectedSquare(square);
+    },
+    [game, puzzleStatus, currentMoveIndex, isAnimating, boardOrientation, selectedSquare, tryMove]
+  );
+
+  // Handle square click (click to move - second click)
+  const onSquareClick = useCallback(
+    ({ square }: { piece: { pieceType: string } | null; square: string }) => {
+      if (puzzleStatus !== "playing" || isAnimating) {
+        return;
+      }
+
+      // If no piece is selected, do nothing (piece click will handle selection)
+      if (!selectedSquare) {
+        return;
+      }
+
+      // If clicking the same square, deselect
+      if (selectedSquare === square) {
+        setSelectedSquare(null);
+        return;
+      }
+
+      // Try to make the move
+      tryMove(selectedSquare, square);
+    },
+    [puzzleStatus, isAnimating, selectedSquare, tryMove]
   );
 
   // Cleanup timeout on unmount
@@ -235,8 +315,15 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
 
   // Combine square styles
   const squareStyles = useMemo(() => {
-    return { ...lastMoveSquares, ...moveHighlightSquares };
-  }, [lastMoveSquares, moveHighlightSquares]);
+    const styles = { ...lastMoveSquares, ...moveHighlightSquares };
+
+    // Add selected square highlight
+    if (selectedSquare) {
+      styles[selectedSquare] = { backgroundColor: "rgba(20, 85, 30, 0.5)" };
+    }
+
+    return styles;
+  }, [lastMoveSquares, moveHighlightSquares, selectedSquare]);
 
   // Get status text
   const statusText = useMemo(() => {
@@ -254,6 +341,8 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
           options={{
             position: game.fen(),
             onPieceDrop: (args) => onDrop(args),
+            onPieceClick: (args) => onPieceClick(args),
+            onSquareClick: (args) => onSquareClick(args),
             boardOrientation: boardOrientation,
             animationDurationInMs: 200,
             arrows: arrows,
@@ -277,16 +366,26 @@ export default function PuzzleBoard({ puzzle, externalArrows = [] }: PuzzleBoard
       <div className="flex items-center justify-center gap-3">
         <Badge
           variant="outline"
-          className={`px-4 py-1.5 text-sm ${
-            puzzleStatus === "success"
+          className={`px-4 py-1.5 text-sm ${puzzleStatus === "success"
               ? "border-success text-success"
               : puzzleStatus === "failed"
-              ? "border-destructive text-destructive"
-              : ""
-          }`}
+                ? "border-destructive text-destructive"
+                : ""
+            }`}
         >
           {statusText}
         </Badge>
+        {puzzleStatus === "playing" && onHintRequest && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onHintRequest}
+            className="gap-1.5"
+          >
+            <Lightbulb className="h-4 w-4" />
+            Hint
+          </Button>
+        )}
       </div>
     </div>
   );
