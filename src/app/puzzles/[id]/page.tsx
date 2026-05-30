@@ -1,6 +1,5 @@
 "use client";
 
-import AudioDeviceModal from "@/components/AudioDeviceModal";
 import PuzzleBoard from "@/components/PuzzleBoard";
 import { TranscriptView } from "@/components/TranscriptView";
 import { Badge } from "@/components/ui/badge";
@@ -8,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAttemptedPuzzles } from "@/hooks/useAttemptedPuzzles";
-import { usePuzzleAgentController } from "@/hooks/usePuzzleAgentController";
+import { useTurnBasedPuzzleHint } from "@/hooks/useTurnBasedPuzzleHint";
 import { useRandomPuzzle } from "@/hooks/useRandomPuzzle";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useVictoryEffects } from "@/hooks/useVictoryEffects";
 import { calculateNewElo, calculateRatingDelta, getPuzzleResult, type GameResult } from "@/lib/elo";
 import { fetchPuzzleById, fetchAllPuzzles } from "@/lib/puzzles";
 import { updateUserElo } from "@/lib/userProfile";
+import { useCoachStore } from "@/stores/coachStore";
 import { usePuzzleStore } from "@/stores";
 import {
   getDifficultyFromRating,
@@ -29,10 +29,8 @@ import {
   Lightbulb,
   Loader2,
   LogIn,
-  Mic,
   RotateCcw,
   Shuffle,
-  Square,
   TrendingDown,
   TrendingUp,
   Trophy,
@@ -76,28 +74,16 @@ export default function PuzzlePage() {
     { excludeId: puzzleId, excludeIds: attemptedPuzzleIds }
   );
 
-  // Puzzle Agent for hints
+  // Turn-based puzzle hint (Claude-backed)
   const {
-    isConnected: agentConnected,
-    isConnecting: agentConnecting,
-    isMicMuted,
-    transcript,
-    transcriptHistory,
     arrows: agentArrows,
-    showDeviceModal,
-    inputDevices,
-    outputDevices,
-    selectedInputDeviceId,
-    selectedOutputDeviceId,
+    isLoading: hintLoading,
     requestHint: agentRequestHint,
-    confirmDeviceSelection,
-    setSelectedInputDeviceId,
-    setSelectedOutputDeviceId,
-    setShowDeviceModal,
-    toggleMic,
     clearArrows,
     clearHistory,
-  } = usePuzzleAgentController();
+  } = useTurnBasedPuzzleHint();
+
+  const transcriptHistory = useCoachStore((s) => s.transcriptHistory);
 
   // Note: Agent no longer auto-responds to moves. Hints only when user clicks the button.
 
@@ -221,15 +207,15 @@ export default function PuzzlePage() {
     if (!puzzle || autoHintTriggeredRef.current === puzzle.id) return;
     // Wait until puzzle is ready to play
     if (puzzleStatus !== "playing") return;
-    // Don't trigger if already connecting or connected
-    if (agentConnecting || agentConnected) return;
-    
+    // Don't fire while a request is already in flight
+    if (hintLoading) return;
+
     // Mark as triggered for this puzzle
     autoHintTriggeredRef.current = puzzle.id;
-    
+
     // Request the first hint automatically
     handleHint();
-  }, [puzzle, puzzleStatus, agentConnecting, agentConnected, handleHint]);
+  }, [puzzle, puzzleStatus, hintLoading, handleHint]);
 
   // Trigger victory effects when puzzle is solved
   useEffect(() => {
@@ -460,7 +446,7 @@ export default function PuzzlePage() {
                 </div>
                 <TranscriptView
                   transcriptHistory={transcriptHistory}
-                  transcript={transcript}
+                  transcript=""
                   emptyMessage="Tap the lightbulb for a hint"
                   className="max-h-32"
                 />
@@ -473,34 +459,15 @@ export default function PuzzlePage() {
                     size="icon"
                     className="h-8 w-8 rounded-full shadow-md bg-background"
                     onClick={handleHint}
-                    disabled={agentConnecting}
+                    disabled={hintLoading}
                     title={`Get hint${hintsUsed > 0 ? ` (${hintsUsed} used)` : ""}`}
                   >
-                    {agentConnecting ? (
+                    {hintLoading ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <Lightbulb className="w-3.5 h-3.5" />
                     )}
                   </Button>
-
-                  {/* Transcribe/Stop FAB - only when connected */}
-                  {agentConnected && (
-                    <Button
-                      variant={isMicMuted ? "default" : "secondary"}
-                      size="icon"
-                      className={`h-8 w-8 rounded-full shadow-md transition-all ${
-                        !isMicMuted ? "ring-2 ring-primary ring-offset-1 ring-offset-background animate-pulse" : ""
-                      }`}
-                      onClick={toggleMic}
-                      title={isMicMuted ? "Start transcribing" : "Stop transcribing"}
-                    >
-                      {isMicMuted ? (
-                        <Mic className="w-3.5 h-3.5" />
-                      ) : (
-                        <Square className="w-3.5 h-3.5" />
-                      )}
-                    </Button>
-                  )}
                 </div>
               </div>
             )}
@@ -643,19 +610,6 @@ export default function PuzzlePage() {
           </div>
         </div>
       </div>
-
-      {/* Audio Device Selection Modal */}
-      <AudioDeviceModal
-        isOpen={showDeviceModal}
-        onClose={() => setShowDeviceModal(false)}
-        onConfirm={confirmDeviceSelection}
-        inputDevices={inputDevices}
-        outputDevices={outputDevices}
-        selectedInputDeviceId={selectedInputDeviceId}
-        selectedOutputDeviceId={selectedOutputDeviceId}
-        onInputDeviceChange={setSelectedInputDeviceId}
-        onOutputDeviceChange={setSelectedOutputDeviceId}
-      />
     </main>
   );
 }

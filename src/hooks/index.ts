@@ -1,8 +1,10 @@
 export { useAttemptedPuzzles } from "./useAttemptedPuzzles";
 export { useBoardController, useBoardEngine } from "./useBoardController";
 export { useCoachController, useCoachSession } from "./useCoachController";
+export { useTurnBasedCoach } from "./useTurnBasedCoach";
 export { useMoveController } from "./useMoveController";
 export { usePuzzleAgentController } from "./usePuzzleAgentController";
+export { useTurnBasedPuzzleHint } from "./useTurnBasedPuzzleHint";
 export { useRandomPuzzle } from "./useRandomPuzzle";
 export { useUserProfile } from "./useUserProfile";
 export { useVictoryEffects } from "./useVictoryEffects";

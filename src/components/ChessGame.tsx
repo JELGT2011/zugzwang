@@ -5,9 +5,8 @@ import CoachPanel from "@/components/CoachPanel";
 import GameControlsPanel from "@/components/GameControlsPanel";
 import NewGamePanel from "@/components/NewGamePanel";
 import { Badge } from "@/components/ui/badge";
-import { useBoardController, useBoardEngine, useCoachController } from "@/hooks";
+import { useBoardController, useBoardEngine } from "@/hooks";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { Chess } from "chess.js";
 import { useCallback, useMemo, useState } from "react";
 import { Chessboard } from "react-chessboard";
 
@@ -96,24 +95,13 @@ export default function ChessGame() {
   // Engine automation - ONLY called here (handles computer opponent moves)
   useBoardEngine();
 
-  // Coach controller (state access only - safe for multiple components)
-  const { initiateConnection } = useCoachController();
-
   // Local UI state
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(true);
 
-  // Start new game and connect coach
+  // Start new game — coach is turn-based and self-activates on the first move.
   const handleStartGame = useCallback((asWhite: boolean) => {
     startNewGame(asWhite);
-
-    // Connect coach with initial board state
-    const initialGame = new Chess();
-    initiateConnection({
-      fen: initialGame.fen(),
-      moveHistory: "",
-      boardAscii: initialGame.ascii()
-    });
-  }, [startNewGame, initiateConnection]);
+  }, [startNewGame]);
 
   // Core move function
   const tryMove = useCallback(
