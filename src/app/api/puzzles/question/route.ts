@@ -1,14 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod/v4";
-import { PUZZLE_HINT_SYSTEM_PROMPT } from "@/agents/puzzleHintPrompt";
+import { PUZZLE_QUESTION_SYSTEM_PROMPT } from "@/agents/puzzleQuestionPrompt";
 import {
     ArrowSchema,
     PieceSchema,
     SolutionAnalysisSchema,
-    StepEngineAnalysisSchema,
     TacticalContextSchema,
-    formatEngineLines,
     formatPieces,
     formatSolutionAnalysis,
     formatTacticalContext,
@@ -16,11 +14,11 @@ import {
 
 export const maxDuration = 60;
 
-const HintResponseSchema = z.object({
+const QuestionResponseSchema = z.object({
     spokenText: z
         .string()
         .describe(
-            "1-2 short sentences spoken aloud as a hint. Never reveal the exact solution move. 10-30 words."
+            "1-3 short sentences spoken aloud answering the player's question. Never reveal the exact solution move. 15-50 words."
         ),
     arrows: z
         .array(ArrowSchema)
@@ -29,11 +27,16 @@ const HintResponseSchema = z.object({
         ),
 });
 
+const TranscriptMessageSchema = z.object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+});
+
 const RequestSchema = z.object({
+    userQuestion: z.string().min(1).max(2000),
     fen: z.string(),
     pieces: z.array(PieceSchema),
     themes: z.array(z.string()),
-    hintsUsed: z.number().int().nonnegative(),
     moveNumber: z.number().int().nonnegative(),
     totalMoves: z.number().int().nonnegative(),
     playerColor: z.string(),
@@ -41,16 +44,27 @@ const RequestSchema = z.object({
     solutionMove: z.string(),
     solutionMoveReadable: z.string(),
     solutionAnalysis: SolutionAnalysisSchema.nullable().optional(),
-    engineSteps: z.array(StepEngineAnalysisSchema).optional(),
+    transcriptHistory: z.array(TranscriptMessageSchema).optional(),
 });
 
-type HintRequest = z.infer<typeof RequestSchema>;
+type QuestionRequest = z.infer<typeof RequestSchema>;
 
-function buildUserPrompt(req: HintRequest): string {
+function formatTranscript(history: QuestionRequest["transcriptHistory"]): string {
+    if (!history || history.length === 0) return "(no prior exchanges in this session)";
+    return history
+        .map((m) => {
+            const speaker = m.role === "user" ? "Player" : "Zuggy";
+            return `${speaker}: ${m.content}`;
+        })
+        .join("\n");
+}
+
+function buildUserPrompt(req: QuestionRequest): string {
     const sections: string[] = [
+        `USER QUESTION: ${req.userQuestion}`,
+        ``,
         `PLAYER COLOR: ${req.playerColor}`,
         `MOVE: ${req.moveNumber} of ${req.totalMoves}`,
-        `HINTS USED: ${req.hintsUsed}`,
         `THEMES: ${req.themes.join(", ") || "(none specified)"}`,
         ``,
         `FEN: ${req.fen}`,
@@ -76,19 +90,16 @@ function buildUserPrompt(req: HintRequest): string {
         sections.push(``);
     }
 
-    if (req.engineSteps && req.engineSteps.length > 0) {
-        sections.push(
-            `ENGINE LINES (Stockfish depth 15, MultiPV 3; evals are centipawns from the side-to-move's perspective — positive means good for the side to move):`
-        );
-        sections.push(formatEngineLines(req.engineSteps));
-        sections.push(``);
-    }
-
     sections.push(`TACTICAL ANALYSIS:`);
     sections.push(formatTacticalContext(req.tacticalContext));
     sections.push(``);
+
+    sections.push(`TRANSCRIPT HISTORY (this session):`);
+    sections.push(formatTranscript(req.transcriptHistory));
+    sections.push(``);
+
     sections.push(
-        `Produce the structured hint now. Match your depth to HINTS USED = ${req.hintsUsed}. Verify your arrows do NOT include ${req.solutionMove.slice(0, 2)}→${req.solutionMove.slice(2, 4)}.`
+        `Answer the user's question now. Stay grounded in the analysis. Verify your arrows do NOT include ${req.solutionMove.slice(0, 2)}→${req.solutionMove.slice(2, 4)}.`
     );
 
     return sections.join("\n");
@@ -126,12 +137,12 @@ export async function POST(request: Request) {
             thinking: { type: "adaptive" },
             output_config: {
                 effort: "high",
-                format: zodOutputFormat(HintResponseSchema),
+                format: zodOutputFormat(QuestionResponseSchema),
             },
             system: [
                 {
                     type: "text",
-                    text: PUZZLE_HINT_SYSTEM_PROMPT,
+                    text: PUZZLE_QUESTION_SYSTEM_PROMPT,
                     cache_control: { type: "ephemeral" },
                 },
             ],
@@ -180,7 +191,7 @@ export async function POST(request: Request) {
     } catch (error) {
         if (error instanceof Anthropic.APIError) {
             console.error(
-                "[puzzles/hint] Anthropic error:",
+                "[puzzles/question] Anthropic error:",
                 error.status,
                 error.message
             );
@@ -189,7 +200,7 @@ export async function POST(request: Request) {
                 { status: error.status }
             );
         }
-        console.error("[puzzles/hint] unexpected error:", error);
+        console.error("[puzzles/question] unexpected error:", error);
         return Response.json({ error: "Internal error" }, { status: 500 });
     }
 }

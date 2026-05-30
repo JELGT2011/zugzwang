@@ -8,9 +8,11 @@ import { PuzzleResultCard } from "@/components/puzzle/PuzzleResultCard";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAttemptedPuzzles } from "@/hooks/useAttemptedPuzzles";
+import { usePushToTalk } from "@/hooks/usePushToTalk";
 import { usePuzzleSession } from "@/hooks/usePuzzleSession";
 import { useRandomPuzzle } from "@/hooks/useRandomPuzzle";
 import { useTurnBasedPuzzleHint } from "@/hooks/useTurnBasedPuzzleHint";
+import { useTurnBasedPuzzleQuestion } from "@/hooks/useTurnBasedPuzzleQuestion";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { fetchAllPuzzles, fetchPuzzleById } from "@/lib/puzzles";
 import { useCoachStore } from "@/stores/coachStore";
@@ -26,7 +28,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function PuzzlePage() {
   const params = useParams();
@@ -56,12 +58,29 @@ export default function PuzzlePage() {
   );
 
   const {
-    arrows: agentArrows,
+    arrows: hintArrows,
     isLoading: hintLoading,
     requestHint: agentRequestHint,
-    clearArrows,
+    clearArrows: clearHintArrows,
     clearHistory,
   } = useTurnBasedPuzzleHint();
+
+  const {
+    arrows: questionArrows,
+    isLoading: questionLoading,
+    askQuestion,
+    clearArrows: clearQuestionArrows,
+  } = useTurnBasedPuzzleQuestion();
+
+  const {
+    isRecording,
+    isTranscribing,
+    error: micError,
+    start: startRecording,
+    stop: stopRecording,
+    cancel: cancelRecording,
+    clearError: clearMicError,
+  } = usePushToTalk({ onTranscript: askQuestion });
 
   const transcriptHistory = useCoachStore((s) => s.transcriptHistory);
   const isOutputMuted = useCoachStore((s) => s.isOutputMuted);
@@ -73,19 +92,41 @@ export default function PuzzlePage() {
 
   const { eloResult, clearEloResult } = usePuzzleSession(puzzle);
 
-  // Reset hint UI when the puzzle URL changes (client-side navigation)
-  useEffect(() => {
-    clearArrows();
-    clearHistory();
-  }, [puzzleId, clearArrows, clearHistory]);
+  const combinedArrows = useMemo(
+    () => [...hintArrows, ...questionArrows],
+    [hintArrows, questionArrows]
+  );
 
-  // Also clear hint UI when the user retries (back to playing with no hints)
+  const clearAllArrows = useCallback(() => {
+    clearHintArrows();
+    clearQuestionArrows();
+  }, [clearHintArrows, clearQuestionArrows]);
+
+  // When hint produces arrows, drop any question arrows so they don't stack visually.
+  useEffect(() => {
+    if (hintArrows.length > 0) clearQuestionArrows();
+  }, [hintArrows, clearQuestionArrows]);
+
+  // And vice versa.
+  useEffect(() => {
+    if (questionArrows.length > 0) clearHintArrows();
+  }, [questionArrows, clearHintArrows]);
+
+  // Reset coach UI when the puzzle URL changes (client-side navigation)
+  useEffect(() => {
+    cancelRecording();
+    clearAllArrows();
+    clearHistory();
+    clearMicError();
+  }, [puzzleId, cancelRecording, clearAllArrows, clearHistory, clearMicError]);
+
+  // Also clear coach UI when the user retries (back to playing with no hints)
   useEffect(() => {
     if (puzzleStatus === "playing" && hintsUsed === 0) {
-      clearArrows();
+      clearAllArrows();
       clearHistory();
     }
-  }, [puzzleStatus, hintsUsed, clearArrows, clearHistory]);
+  }, [puzzleStatus, hintsUsed, clearAllArrows, clearHistory]);
 
   const loadPuzzle = useCallback(async () => {
     if (!user || !puzzleId) return;
@@ -146,17 +187,31 @@ export default function PuzzlePage() {
 
   const handleNewPuzzle = useCallback(() => {
     clearEloResult();
-    clearArrows();
+    clearAllArrows();
     clearHistory();
+    clearMicError();
     goToRandomPuzzle();
-  }, [clearEloResult, clearArrows, clearHistory, goToRandomPuzzle]);
+  }, [
+    clearEloResult,
+    clearAllArrows,
+    clearHistory,
+    clearMicError,
+    goToRandomPuzzle,
+  ]);
 
   const handleRetry = useCallback(() => {
     clearEloResult();
-    clearArrows();
+    clearAllArrows();
     clearHistory();
+    clearMicError();
     resetPuzzle();
-  }, [clearEloResult, clearArrows, clearHistory, resetPuzzle]);
+  }, [
+    clearEloResult,
+    clearAllArrows,
+    clearHistory,
+    clearMicError,
+    resetPuzzle,
+  ]);
 
   if (authLoading) {
     return (
@@ -255,7 +310,7 @@ export default function PuzzlePage() {
             <div className="w-full max-w-[600px] relative">
               <PuzzleBoard
                 puzzle={puzzle}
-                externalArrows={agentArrows}
+                externalArrows={combinedArrows}
                 onHintRequest={handleHint}
               />
               <FloatingRatingDelta eloResult={eloResult} puzzleId={puzzle.id} />
@@ -278,6 +333,22 @@ export default function PuzzlePage() {
                 onHintRequest={handleHint}
                 hintsUsed={hintsUsed}
                 hintLoading={hintLoading}
+                hintDisabled={
+                  hintLoading ||
+                  isRecording ||
+                  isTranscribing ||
+                  questionLoading
+                }
+                isRecording={isRecording}
+                isMicProcessing={isTranscribing || questionLoading}
+                micDisabled={
+                  !isRecording &&
+                  (isTranscribing || questionLoading || hintLoading)
+                }
+                onMicPointerDown={startRecording}
+                onMicPointerUp={stopRecording}
+                onMicPointerCancel={cancelRecording}
+                micError={micError}
               />
             )}
 

@@ -4,6 +4,8 @@ export { useTurnBasedCoach } from "./useTurnBasedCoach";
 export { useMoveController } from "./useMoveController";
 export { useMoveSounds } from "./useMoveSounds";
 export { useTurnBasedPuzzleHint } from "./useTurnBasedPuzzleHint";
+export { useTurnBasedPuzzleQuestion } from "./useTurnBasedPuzzleQuestion";
+export { usePushToTalk } from "./usePushToTalk";
 export { usePuzzleSession } from "./usePuzzleSession";
 export type { EloResult, PuzzleSession } from "./usePuzzleSession";
 export { useRandomPuzzle } from "./useRandomPuzzle";
