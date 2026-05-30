@@ -34,6 +34,8 @@ import {
   TrendingDown,
   TrendingUp,
   Trophy,
+  Volume2,
+  VolumeX,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -84,6 +86,8 @@ export default function PuzzlePage() {
   } = useTurnBasedPuzzleHint();
 
   const transcriptHistory = useCoachStore((s) => s.transcriptHistory);
+  const isOutputMuted = useCoachStore((s) => s.isOutputMuted);
+  const setIsOutputMuted = useCoachStore((s) => s.setIsOutputMuted);
 
   // Note: Agent no longer auto-responds to moves. Hints only when user clicks the button.
 
@@ -453,6 +457,20 @@ export default function PuzzlePage() {
 
                 {/* Floating Action Buttons */}
                 <div className="absolute bottom-2 right-2 flex items-center gap-2">
+                  {/* Mute Toggle FAB */}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 rounded-full shadow-md bg-background"
+                    onClick={() => setIsOutputMuted(!isOutputMuted)}
+                    title={isOutputMuted ? "Unmute coach" : "Mute coach"}
+                  >
+                    {isOutputMuted ? (
+                      <VolumeX className="w-3.5 h-3.5" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
                   {/* Get Hint FAB */}
                   <Button
                     variant="outline"

@@ -3,6 +3,7 @@ import { useBoardStore } from "@/stores";
 import { useCoachStore } from "@/stores/coachStore";
 import { Chess, type Move } from "chess.js";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTtsPlayer } from "./useTtsPlayer";
 
 const sharedState = {
     lastProcessedFen: null as string | null,
@@ -35,6 +36,7 @@ export function useTurnBasedCoach() {
     const addToHistory = useCoachStore((state) => state.addToHistory);
 
     const { getTopMoves } = useStockfish();
+    const { playText } = useTtsPlayer();
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [lastUsage, setLastUsage] = useState<AnalyzeUsage | null>(null);
@@ -125,6 +127,7 @@ export function useTurnBasedCoach() {
                         content: data.spokenText,
                         timestamp: Date.now(),
                     });
+                    void playText(data.spokenText);
                 }
 
                 setLastUsage(data.usage);
@@ -156,6 +159,7 @@ export function useTurnBasedCoach() {
         addArrow,
         clearArrows,
         addToHistory,
+        playText,
     ]);
 
     useEffect(() => {

@@ -3,6 +3,7 @@ import { useCoachStore } from "@/stores/coachStore";
 import { Chess, type Color, type PieceSymbol, type Square } from "chess.js";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Arrow } from "react-chessboard";
+import { useTtsPlayer } from "./useTtsPlayer";
 
 interface HintUsage {
     input_tokens: number;
@@ -234,6 +235,8 @@ export function useTurnBasedPuzzleHint() {
 
     const addToHistory = useCoachStore((s) => s.addToHistory);
 
+    const { playText, stop: stopTts, isPlaying: isSpeaking } = useTtsPlayer();
+
     const [arrows, setArrows] = useState<Arrow[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -340,6 +343,7 @@ export function useTurnBasedPuzzleHint() {
                     content: data.spokenText,
                     timestamp: Date.now(),
                 });
+                void playText(data.spokenText);
             }
 
             setLastUsage(data.usage);
@@ -363,6 +367,7 @@ export function useTurnBasedPuzzleHint() {
         currentMoveIndex,
         hintsUsed,
         addToHistory,
+        playText,
     ]);
 
     return {
@@ -373,5 +378,7 @@ export function useTurnBasedPuzzleHint() {
         requestHint,
         clearArrows,
         clearHistory,
+        isSpeaking,
+        stopSpeaking: stopTts,
     };
 }
