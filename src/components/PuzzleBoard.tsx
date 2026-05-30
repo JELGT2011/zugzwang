@@ -3,6 +3,7 @@
 import BoardSettingsPopover from "@/components/BoardSettingsPopover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useMoveSounds } from "@/hooks/useMoveSounds";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { usePuzzleStore } from "@/stores";
 import type { Puzzle } from "@/types/puzzle";
@@ -58,6 +59,9 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
   // User profile for move method preference
   const { moveMethod } = useUserProfile();
 
+  // Move sound effects (per-move-type synthesized sounds)
+  const { playForMove, playMoveSound } = useMoveSounds();
+
   // Track puzzle ID to detect changes
   const [currentPuzzleId, setCurrentPuzzleId] = useState(puzzle.id);
 
@@ -69,6 +73,11 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
   const [isAnimating, setIsAnimating] = useState(false);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const moveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Wrong-move flash counter - incremented per wrong move to re-mount the animation div.
+  // Success flash is driven directly off puzzleStatus, so it remounts whenever
+  // status transitions back into "success" (handles retry → solve again).
+  const [wrongFlashKey, setWrongFlashKey] = useState(0);
 
   // Reset game when puzzle changes
   if (puzzle.id !== currentPuzzleId) {
@@ -118,6 +127,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
             [move.from]: { backgroundColor: "rgba(255, 210, 77, 0.5)" },
             [move.to]: { backgroundColor: "rgba(255, 210, 77, 0.5)" },
           });
+          playForMove(move);
         }
       } catch (e) {
         console.error("Failed to apply opponent move:", e);
@@ -129,7 +139,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
     advanceMoveIndex();
 
     setIsAnimating(false);
-  }, [puzzle.moves, advanceMoveIndex]);
+  }, [puzzle.moves, advanceMoveIndex, playForMove]);
 
   // Derive solution arrows from state (no effect needed)
   const arrows = useMemo(() => {
@@ -198,6 +208,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
         });
         setMoveHighlightSquares({});
         setSelectedSquare(null);
+        playForMove(moveResult);
 
         if (!complete) {
           // Schedule opponent's response
@@ -209,12 +220,14 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
 
         return true;
       } else {
-        // Wrong move - flash red
+        // Wrong move - flash red on squares + whole-board flash + sound
         setMoveHighlightSquares({
           [sourceSquare]: { backgroundColor: "rgba(204, 36, 29, 0.5)" },
           [targetSquare]: { backgroundColor: "rgba(204, 36, 29, 0.5)" },
         });
         setSelectedSquare(null);
+        playMoveSound("wrong");
+        setWrongFlashKey((k) => k + 1);
 
         setTimeout(() => {
           setMoveHighlightSquares({});
@@ -223,7 +236,7 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
         return false;
       }
     },
-    [game, puzzleStatus, currentMoveIndex, isAnimating, storeMakeMove, applyOpponentMove]
+    [game, puzzleStatus, currentMoveIndex, isAnimating, storeMakeMove, applyOpponentMove, playForMove, playMoveSound]
   );
 
   // Handle piece drop (drag and drop)
@@ -402,6 +415,20 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
             },
           }}
         />
+
+        {/* Transient flash overlays - unmount/remount on each trigger restarts the animation */}
+        {puzzleStatus === "success" && (
+          <div
+            key={`success-${puzzle.id}`}
+            className="absolute inset-0 board-flash-success pointer-events-none rounded-lg"
+          />
+        )}
+        {wrongFlashKey > 0 && (
+          <div
+            key={`wrong-${wrongFlashKey}`}
+            className="absolute inset-0 board-flash-error pointer-events-none rounded-lg"
+          />
+        )}
 
         {/* Overlay for completed/failed state */}
         {puzzleStatus === "success" && (
