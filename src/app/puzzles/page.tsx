@@ -1,6 +1,5 @@
 "use client";
 
-import AudioDeviceModal from "@/components/AudioDeviceModal";
 import PuzzleCard from "@/components/PuzzleCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +10,6 @@ import { useRandomPuzzle } from "@/hooks/useRandomPuzzle";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { fetchPuzzlesNearRating } from "@/lib/puzzles";
 import { usePuzzleStore } from "@/stores";
-import { useCoachStore } from "@/stores/coachStore";
 import {
     PUZZLE_THEMES,
     THEME_DISPLAY_NAMES,
@@ -62,75 +60,12 @@ export default function PuzzlesPage() {
         getFilteredPuzzles,
     } = usePuzzleStore();
 
-    // Audio device setup state
-    const audioSetupComplete = useCoachStore((state) => state.audioSetupComplete);
-    const inputDevices = useCoachStore((state) => state.inputDevices);
-    const outputDevices = useCoachStore((state) => state.outputDevices);
-    const selectedInputDeviceId = useCoachStore((state) => state.selectedInputDeviceId);
-    const selectedOutputDeviceId = useCoachStore((state) => state.selectedOutputDeviceId);
-    const setInputDevices = useCoachStore((state) => state.setInputDevices);
-    const setOutputDevices = useCoachStore((state) => state.setOutputDevices);
-    const setSelectedInputDeviceId = useCoachStore((state) => state.setSelectedInputDeviceId);
-    const setSelectedOutputDeviceId = useCoachStore((state) => state.setSelectedOutputDeviceId);
-    const setAudioSetupComplete = useCoachStore((state) => state.setAudioSetupComplete);
-
     const [showFilters, setShowFilters] = useState(true);
-    const [showAudioModal, setShowAudioModal] = useState(false);
 
     const puzzleElo = profile?.elos?.puzzle;
 
     // Random puzzle navigation
     const { goToRandomPuzzle, isLoading: loadingRandom } = useRandomPuzzle(puzzleElo);
-
-    // Request microphone permission and enumerate devices on mount
-    const initializeAudioDevices = useCallback(async () => {
-        try {
-            // Request permission first to get device labels
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            stream.getTracks().forEach((t) => t.stop());
-
-            // Now enumerate devices
-            const allDevices = await navigator.mediaDevices.enumerateDevices();
-            const audioInputs = allDevices.filter((d) => d.kind === "audioinput" && d.deviceId);
-            const audioOutputs = allDevices.filter((d) => d.kind === "audiooutput" && d.deviceId);
-
-            setInputDevices(audioInputs);
-            setOutputDevices(audioOutputs);
-
-            // Set default selections if not already set
-            if (!selectedInputDeviceId && audioInputs.length > 0) {
-                setSelectedInputDeviceId(audioInputs[0].deviceId);
-            }
-            if (!selectedOutputDeviceId && audioOutputs.length > 0) {
-                setSelectedOutputDeviceId(audioOutputs[0].deviceId);
-            }
-
-            // Show the modal for device selection
-            setShowAudioModal(true);
-        } catch (e) {
-            console.error("Error initializing audio devices:", e);
-            // If user denies permission, mark setup as complete anyway so we don't keep prompting
-            setAudioSetupComplete(true);
-        }
-    }, [selectedInputDeviceId, selectedOutputDeviceId, setInputDevices, setOutputDevices, setSelectedInputDeviceId, setSelectedOutputDeviceId, setAudioSetupComplete]);
-
-    // Show audio setup modal on mount if not already completed
-    useEffect(() => {
-        if (user && !authLoading && !profileLoading && !audioSetupComplete) {
-            initializeAudioDevices();
-        }
-    }, [user, authLoading, profileLoading, audioSetupComplete, initializeAudioDevices]);
-
-    const handleAudioSetupConfirm = useCallback(() => {
-        setAudioSetupComplete(true);
-        setShowAudioModal(false);
-    }, [setAudioSetupComplete]);
-
-    const handleAudioSetupClose = useCallback(() => {
-        // If they close without confirming, still mark as complete so we don't keep prompting
-        setAudioSetupComplete(true);
-        setShowAudioModal(false);
-    }, [setAudioSetupComplete]);
 
     // Load puzzles from Firestore near the player's puzzle ELO
     const loadPuzzles = useCallback(async () => {
@@ -452,18 +387,6 @@ export default function PuzzlesPage() {
                 </div>
             </div>
 
-            {/* Audio Device Setup Modal - shown on first visit to puzzles */}
-            <AudioDeviceModal
-                isOpen={showAudioModal}
-                onClose={handleAudioSetupClose}
-                onConfirm={handleAudioSetupConfirm}
-                inputDevices={inputDevices}
-                outputDevices={outputDevices}
-                selectedInputDeviceId={selectedInputDeviceId}
-                selectedOutputDeviceId={selectedOutputDeviceId}
-                onInputDeviceChange={setSelectedInputDeviceId}
-                onOutputDeviceChange={setSelectedOutputDeviceId}
-            />
         </main>
     );
 }

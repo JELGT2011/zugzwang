@@ -217,16 +217,10 @@ function uciToReadable(uci: string, game: Chess): string {
 }
 
 /**
- * Turn-based puzzle hint hook — replaces usePuzzleAgentController.
- *
- * Calls /api/puzzles/hint when the user clicks the hint button. The route
- * uses Claude with a stable cached system prompt + structured JSON output
- * (spokenText + arrows). Arrows that would reveal the solution are stripped
- * server-side as a safety net.
- *
- * Solution awareness — the hook reads currentMoveIndex from the puzzle store
- * to look up the next correct move in puzzle.moves[]. Hint depth is taken
- * from hintsUsed BEFORE incrementing (so the first click sends hintsUsed=0).
+ * Calls /api/puzzles/hint on demand. Hint depth is taken from hintsUsed
+ * BEFORE the puzzle store increments (so the first click sends 0).
+ * Spoken text is appended to the transcript and played via TTS;
+ * arrows that would reveal the solution are stripped server-side.
  */
 export function useTurnBasedPuzzleHint() {
     const currentPuzzle = usePuzzleStore((s) => s.currentPuzzle);
