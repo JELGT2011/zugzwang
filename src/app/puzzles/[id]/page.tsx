@@ -120,6 +120,16 @@ export default function PuzzlePage() {
     clearMicError();
   }, [puzzleId, cancelRecording, clearAllArrows, clearHistory, clearMicError]);
 
+  // Escape cancels an in-progress recording.
+  useEffect(() => {
+    if (!isRecording) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancelRecording();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isRecording, cancelRecording]);
+
   // Also clear coach UI when the user retries (back to playing with no hints)
   useEffect(() => {
     if (puzzleStatus === "playing" && hintsUsed === 0) {
@@ -184,6 +194,17 @@ export default function PuzzlePage() {
     requestHint();
     await agentRequestHint();
   }, [requestHint, agentRequestHint]);
+
+  const handleMicClick = useCallback(() => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      void startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
+
+  const hintDisabled =
+    hintLoading || isRecording || isTranscribing || questionLoading;
 
   const handleNewPuzzle = useCallback(() => {
     clearEloResult();
@@ -312,6 +333,9 @@ export default function PuzzlePage() {
                 puzzle={puzzle}
                 externalArrows={combinedArrows}
                 onHintRequest={handleHint}
+                hintLoading={hintLoading}
+                hintDisabled={hintDisabled}
+                hintsUsed={hintsUsed}
               />
               <FloatingRatingDelta eloResult={eloResult} puzzleId={puzzle.id} />
             </div>
@@ -333,21 +357,15 @@ export default function PuzzlePage() {
                 onHintRequest={handleHint}
                 hintsUsed={hintsUsed}
                 hintLoading={hintLoading}
-                hintDisabled={
-                  hintLoading ||
-                  isRecording ||
-                  isTranscribing ||
-                  questionLoading
-                }
+                hintDisabled={hintDisabled}
                 isRecording={isRecording}
                 isMicProcessing={isTranscribing || questionLoading}
                 micDisabled={
                   !isRecording &&
                   (isTranscribing || questionLoading || hintLoading)
                 }
-                onMicPointerDown={startRecording}
-                onMicPointerUp={stopRecording}
-                onMicPointerCancel={cancelRecording}
+                onMicClick={handleMicClick}
+                onMicCancel={cancelRecording}
                 micError={micError}
               />
             )}

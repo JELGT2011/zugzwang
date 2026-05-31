@@ -7,8 +7,10 @@ import {
     Lightbulb,
     Loader2,
     Mic,
+    Send,
     Volume2,
     VolumeX,
+    X,
 } from "lucide-react";
 
 interface PuzzleCoachPanelProps {
@@ -22,9 +24,8 @@ interface PuzzleCoachPanelProps {
     isRecording: boolean;
     isMicProcessing: boolean;
     micDisabled: boolean;
-    onMicPointerDown: () => void;
-    onMicPointerUp: () => void;
-    onMicPointerCancel: () => void;
+    onMicClick: () => void;
+    onMicCancel: () => void;
     micError: string | null;
 }
 
@@ -39,14 +40,13 @@ export function PuzzleCoachPanel({
     isRecording,
     isMicProcessing,
     micDisabled,
-    onMicPointerDown,
-    onMicPointerUp,
-    onMicPointerCancel,
+    onMicClick,
+    onMicCancel,
     micError,
 }: PuzzleCoachPanelProps) {
     const hintIsDisabled = hintDisabled ?? hintLoading;
     const statusText = isRecording
-        ? "Listening… release to send"
+        ? "Recording… tap to send"
         : isMicProcessing
             ? "Thinking…"
             : null;
@@ -64,7 +64,7 @@ export function PuzzleCoachPanel({
             <TranscriptView
                 transcriptHistory={transcriptHistory}
                 transcript=""
-                emptyMessage="Hold the mic to ask a question, or tap the lightbulb for a hint"
+                emptyMessage="Tap the mic to ask a question, or tap the lightbulb for a hint"
                 className="max-h-32"
             />
 
@@ -86,36 +86,45 @@ export function PuzzleCoachPanel({
                         <Volume2 className="w-3.5 h-3.5" />
                     )}
                 </Button>
+                {isRecording && (
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 rounded-full shadow-md bg-background"
+                        onClick={onMicCancel}
+                        title="Cancel recording"
+                        aria-label="Cancel recording"
+                    >
+                        <X className="w-3.5 h-3.5" />
+                    </Button>
+                )}
                 <Button
                     variant="outline"
                     size="icon"
-                    className={`h-8 w-8 rounded-full shadow-md select-none touch-none ${
+                    className={`h-8 w-8 rounded-full shadow-md ${
                         isRecording
-                            ? "bg-destructive text-destructive-foreground animate-pulse border-destructive"
+                            ? "bg-destructive text-destructive-foreground animate-pulse border-destructive hover:bg-destructive/90"
                             : "bg-background"
                     }`}
-                    onPointerDown={(e) => {
-                        if (micDisabled) return;
-                        e.preventDefault();
-                        (e.currentTarget as HTMLElement).setPointerCapture(
-                            e.pointerId
-                        );
-                        onMicPointerDown();
-                    }}
-                    onPointerUp={(e) => {
-                        e.preventDefault();
-                        onMicPointerUp();
-                    }}
-                    onPointerCancel={() => {
-                        onMicPointerCancel();
-                    }}
-                    onContextMenu={(e) => e.preventDefault()}
+                    onClick={onMicClick}
                     disabled={micDisabled}
-                    title="Hold to ask a question"
-                    aria-label="Hold to ask a question"
+                    title={
+                        isRecording
+                            ? "Tap to send"
+                            : isMicProcessing
+                                ? "Thinking…"
+                                : "Tap to ask a question"
+                    }
+                    aria-label={
+                        isRecording
+                            ? "Stop recording and send"
+                            : "Start recording a question"
+                    }
                 >
                     {isMicProcessing ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : isRecording ? (
+                        <Send className="w-3.5 h-3.5" />
                     ) : (
                         <Mic className="w-3.5 h-3.5" />
                     )}

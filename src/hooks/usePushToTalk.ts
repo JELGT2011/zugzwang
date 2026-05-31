@@ -44,6 +44,7 @@ export function usePushToTalk({
     const chunksRef = useRef<Blob[]>([]);
     const startedAtRef = useRef<number>(0);
     const cancelledRef = useRef(false);
+    const startingRef = useRef(false);
     const onTranscriptRef = useRef(onTranscript);
 
     useEffect(() => {
@@ -66,7 +67,8 @@ export function usePushToTalk({
     }, [releaseStream]);
 
     const start = useCallback(async () => {
-        if (recorderRef.current) return;
+        if (recorderRef.current || startingRef.current) return;
+        startingRef.current = true;
         setError(null);
         cancelledRef.current = false;
         chunksRef.current = [];
@@ -75,6 +77,7 @@ export function usePushToTalk({
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (e) {
+            startingRef.current = false;
             console.error("[usePushToTalk] getUserMedia error:", e);
             if (e instanceof DOMException && e.name === "NotAllowedError") {
                 setError("Microphone permission denied.");
@@ -163,6 +166,8 @@ export function usePushToTalk({
             setError("Could not start recording.");
             releaseStream();
             setIsRecording(false);
+        } finally {
+            startingRef.current = false;
         }
     }, [minDurationMs, releaseStream]);
 

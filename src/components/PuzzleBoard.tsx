@@ -8,7 +8,7 @@ import { useUserProfile } from "@/hooks/useUserProfile";
 import { usePuzzleStore } from "@/stores";
 import type { Puzzle } from "@/types/puzzle";
 import { Chess, Move as ChessMove } from "chess.js";
-import { Lightbulb } from "lucide-react";
+import { Lightbulb, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Arrow } from "react-chessboard";
 import { Chessboard } from "react-chessboard";
@@ -17,6 +17,9 @@ interface PuzzleBoardProps {
   puzzle: Puzzle;
   externalArrows?: Arrow[];
   onHintRequest?: () => void;
+  hintLoading?: boolean;
+  hintDisabled?: boolean;
+  hintsUsed?: number;
 }
 
 // Helper to initialize game state from puzzle
@@ -47,7 +50,14 @@ function initializeGameFromPuzzle(puzzle: Puzzle): { game: Chess; setupMoveSquar
   return { game, setupMoveSquares };
 }
 
-export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest }: PuzzleBoardProps) {
+export default function PuzzleBoard({
+  puzzle,
+  externalArrows = [],
+  onHintRequest,
+  hintLoading = false,
+  hintDisabled,
+  hintsUsed = 0,
+}: PuzzleBoardProps) {
   const {
     currentMoveIndex,
     puzzleStatus,
@@ -458,9 +468,15 @@ export default function PuzzleBoard({ puzzle, externalArrows = [], onHintRequest
               variant="outline"
               size="sm"
               onClick={onHintRequest}
+              disabled={hintDisabled ?? hintLoading}
               className="gap-1.5"
+              title={`Get hint${hintsUsed > 0 ? ` (${hintsUsed} used)` : ""}`}
             >
-              <Lightbulb className="h-4 w-4" />
+              {hintLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Lightbulb className="h-4 w-4" />
+              )}
               Hint
             </Button>
           )}
